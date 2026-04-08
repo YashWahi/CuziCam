@@ -1,0 +1,226 @@
+// CuziCam - Prisma Schema
+// Database: PostgreSQL
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ──────────────────────────────────────────────────────────────
+// COLLEGES
+// ──────────────────────────────────────────────────────────────
+model College {
+  id          String   @id @default(uuid())
+  name        String
+  domain      String   @unique // e.g. "mit.edu"
+  city        String?
+  country     String   @default("India")
+  createdAt   DateTime @default(now())
+
+  users       User[]
+  confessions Confession[]
+}
+
+// ──────────────────────────────────────────────────────────────
+// USERS
+// ──────────────────────────────────────────────────────────────
+model User {
+  id              String    @id @default(uuid())
+  email           String    @unique
+  name            String
+  avatarUrl       String?
+  bio             String?
+  year            String?   // e.g. "2nd Year"
+  branch          String?   // e.g. "CSE"
+  interests       String[]  @default([])
+  gender          Gender?
+  role            Role      @default(USER)
+  vibeScore       Float     @default(5.0) // 0-10 reputation score
+  isVerified      Boolean   @default(false)
+  isEmailVerified Boolean   @default(false)
+  isBanned        Boolean   @default(false)
+  shadowBanned    Boolean   @default(false)
+  strictPreference Boolean  @default(false) // Opt-out of Chaos Window
+  googleId        String?   @unique
+  passwordHash    String?
+  emailVerifyToken String?
+  refreshToken    String?
+  lastSeen        DateTime  @default(now())
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  collegeId       String
+  college         College   @relation(fields: [collegeId], references: [id])
+
+  sessionsAsA     MatchSession[] @relation("UserA")
+  sessionsAsB     MatchSession[] @relation("UserB")
+  starsGiven      Star[]         @relation("StarGiver")
+  starsReceived   Star[]         @relation("StarReceiver")
+  connections     Connection[]   @relation("ConnectionUserA")
+  connectedWith   Connection[]   @relation("ConnectionUserB")
+  confessions     Confession[]
+  reports         Report[]       @relation("Reporter")
+  reportedIn      Report[]       @relation("Reported")
+  blocks          Block[]        @relation("Blocker")
+  blockedIn       Block[]        @relation("Blocked")
+
+  @@index([collegeId])
+  @@index([vibeScore])
+}
+
+enum Gender {
+  MALE
+  FEMALE
+  NON_BINARY
+  PREFER_NOT_TO_SAY
+}
+
+enum Role {
+  USER
+  MODERATOR
+  ADMIN
+}
+
+// ──────────────────────────────────────────────────────────────
+// MATCH SESSIONS (Metadata only — no audio/video stored)
+// ──────────────────────────────────────────────────────────────
+model MatchSession {
+  id              String    @id @default(uuid())
+  startTime       DateTime  @default(now())
+  endTime         DateTime?
+  durationSeconds Int?
+  skipReason      String?   // "user_a_skipped" | "user_b_skipped" | "mutual"
+  avgToxicityScore Float?
+  messageCount    Int       @default(0)
+  icebreaker      String?   // which icebreaker was shown
+  chaosWindow     Boolean   @default(false)
+  createdAt       DateTime  @default(now())
+
+  userAId String
+  userBId String
+  userA   User   @relation("UserA", fields: [userAId], references: [id])
+  userB   User   @relation("UserB", fields: [userBId], references: [id])
+
+  stars   Star[]
+  reports Report[]
+
+  @@index([userAId])
+  @@index([userBId])
+  @@index([startTime])
+}
+
+// ──────────────────────────────────────────────────────────────
+// STARS (End-of-session mutual appreciation)
+// ──────────────────────────────────────────────────────────────
+model Star {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+
+  sessionId String
+  session   MatchSession @relation(fields: [sessionId], references: [id])
+
+  giverId   String
+  giver     User   @relation("StarGiver", fields: [giverId], references: [id])
+
+  receiverId String
+  receiver   User   @relation("StarReceiver", fields: [receiverId], references: [id])
+
+  @@unique([sessionId, giverId]) // One star per user per session
+  @@index([sessionId])
+}
+
+// ──────────────────────────────────────────────────────────────
+// CONNECTIONS (Mutual stars lead to connections)
+// ──────────────────────────────────────────────────────────────
+model Connection {
+  id        String   @id @default(uuid())
+  createdAt DateTime @default(now())
+
+  userAId   String
+  userBId   String
+  userA     User   @relation("ConnectionUserA", fields: [userAId], references: [id])
+  userB     User   @relation("ConnectionUserB", fields: [userBId], references: [id])
+
+  sessionId String?
+
+  @@unique([userAId, userBId])
+}
+
+// ──────────────────────────────────────────────────────────────
+// ANONYMOUS CONFESSIONS (Per-college board)
+// ──────────────────────────────────────────────────────────────
+model Confession {
+  id          String   @id @default(uuid())
+  content     String   @db.Text
+  upvotes     Int      @default(0)
+  isVisible   Boolean  @default(true) // Can be hidden by moderation
+  toxicScore  Float?
+  createdAt   DateTime @default(now())
+
+  collegeId   String
+  college     College  @relation(fields: [collegeId], references: [id])
+
+  authorId    String?  // Nullable for true anonymity, but track for moderation
+  author      User?    @relation(fields: [authorId], references: [id])
+
+  @@index([collegeId, createdAt])
+}
+
+// ──────────────────────────────────────────────────────────────
+// REPORTS
+// ──────────────────────────────────────────────────────────────
+model Report {
+  id          String       @id @default(uuid())
+  reason      ReportReason
+  description String?
+  status      ReportStatus @default(PENDING)
+  resolvedAt  DateTime?
+  createdAt   DateTime     @default(now())
+
+  reporterId  String
+  reporter    User   @relation("Reporter", fields: [reporterId], references: [id])
+
+  reportedId  String
+  reported    User   @relation("Reported", fields: [reportedId], references: [id])
+
+  sessionId   String?
+  session     MatchSession? @relation(fields: [sessionId], references: [id])
+
+  @@index([status])
+}
+
+enum ReportReason {
+  INAPPROPRIATE_CONTENT
+  HARASSMENT
+  SPAM
+  NUDITY
+  UNDERAGE
+  OTHER
+}
+
+enum ReportStatus {
+  PENDING
+  REVIEWED
+  ACTION_TAKEN
+  DISMISSED
+}
+
+// ──────────────────────────────────────────────────────────────
+// BLOCKS
+// ──────────────────────────────────────────────────────────────
+model Block {
+  id          String   @id @default(uuid())
+  createdAt   DateTime @default(now())
+
+  blockerId   String
+  blocker     User   @relation("Blocker", fields: [blockerId], references: [id])
+
+  blockedId   String
+  blocked     User   @relation("Blocked", fields: [blockedId], references: [id])
+
+  @@unique([blockerId, blockedId])
+}
