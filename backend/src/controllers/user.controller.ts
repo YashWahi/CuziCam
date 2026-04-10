@@ -46,7 +46,7 @@ export const updateProfile = async (req: AuthRequest, res: Response) => {
         bio,
         year,
         branch,
-        interests,
+        interests: interests as any,
         avatarUrl,
         gender,
         strictPreference

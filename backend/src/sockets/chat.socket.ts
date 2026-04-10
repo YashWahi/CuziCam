@@ -26,7 +26,7 @@ const getIcebreaker = async (interestsA: string[], interestsB: string[]): Promis
       interests_a: interestsA,
       interests_b: interestsB,
     }, { timeout: 2000 });
-    return res.data.icebreaker || "What's your favorite thing about your college?";
+    return (res.data as any).icebreaker || "What's your favorite thing about your college?";
   } catch {
     return "What's your favorite thing about your college?";
   }
@@ -36,7 +36,7 @@ const getIcebreaker = async (interestsA: string[], interestsB: string[]): Promis
 const checkToxicity = async (message: string): Promise<number> => {
   try {
     const res = await axios.post(`${AI_SERVICE_URL}/toxicity`, { text: message }, { timeout: 1500 });
-    return res.data.score || 0;
+    return (res.data as any).score || 0;
   } catch {
     return 0;
   }

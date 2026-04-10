@@ -47,7 +47,7 @@ export const registerWithEmail = async (data: {
       collegeId: data.collegeId,
       year: data.year,
       branch: data.branch,
-      interests: data.interests || [],
+      interests: data.interests as any,
     },
   });
 

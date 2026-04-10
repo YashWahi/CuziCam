@@ -6,8 +6,8 @@ generator client {
 }
 
 datasource db {
-  provider = "postgresql"
-  url      = env("DATABASE_URL")
+  provider = "sqlite"
+  url      = "file:./dev.db"
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -36,9 +36,9 @@ model User {
   bio             String?
   year            String?   // e.g. "2nd Year"
   branch          String?   // e.g. "CSE"
-  interests       String[]  @default([])
-  gender          Gender?
-  role            Role      @default(USER)
+  interests       String    @default("[]") // SQLite doesn't support String[], using JSON string
+  gender          String?   // Changed from Gender enum to String for SQLite
+  role            String    @default("USER") // Changed from Role enum to String for SQLite
   vibeScore       Float     @default(5.0) // 0-10 reputation score
   isVerified      Boolean   @default(false)
   isEmailVerified Boolean   @default(false)
@@ -70,19 +70,6 @@ model User {
 
   @@index([collegeId])
   @@index([vibeScore])
-}
-
-enum Gender {
-  MALE
-  FEMALE
-  NON_BINARY
-  PREFER_NOT_TO_SAY
-}
-
-enum Role {
-  USER
-  MODERATOR
-  ADMIN
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -155,7 +142,7 @@ model Connection {
 // ──────────────────────────────────────────────────────────────
 model Confession {
   id          String   @id @default(uuid())
-  content     String   @db.Text
+  content     String
   upvotes     Int      @default(0)
   isVisible   Boolean  @default(true) // Can be hidden by moderation
   toxicScore  Float?
@@ -175,9 +162,9 @@ model Confession {
 // ──────────────────────────────────────────────────────────────
 model Report {
   id          String       @id @default(uuid())
-  reason      ReportReason
+  reason      String       // Changed from ReportReason enum to String
   description String?
-  status      ReportStatus @default(PENDING)
+  status      String       @default("PENDING") // Changed from ReportStatus enum to String
   resolvedAt  DateTime?
   createdAt   DateTime     @default(now())
 
@@ -191,22 +178,6 @@ model Report {
   session     MatchSession? @relation(fields: [sessionId], references: [id])
 
   @@index([status])
-}
-
-enum ReportReason {
-  INAPPROPRIATE_CONTENT
-  HARASSMENT
-  SPAM
-  NUDITY
-  UNDERAGE
-  OTHER
-}
-
-enum ReportStatus {
-  PENDING
-  REVIEWED
-  ACTION_TAKEN
-  DISMISSED
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -224,3 +195,5 @@ model Block {
 
   @@unique([blockerId, blockedId])
 }
+
+

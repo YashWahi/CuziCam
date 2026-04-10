@@ -1,116 +1,229 @@
-"use client";
+'use client';
 
-import React, { useState } from 'react';
-import { useRouter } from 'next/navigation';
+import React, { useState, useEffect } from 'react';
+import { motion } from 'framer-motion';
+import { useAuth } from '@/context/AuthContext';
+import { Sidebar } from '@/components/Sidebar';
+import { Input } from '@/components/Input';
+import { Button } from '@/components/Button';
+import { Tag } from '@/components/Tag';
+import { Card } from '@/components/Card';
+import { Badge } from '@/components/Badge';
+import styles from './page.module.css';
 
-const INTEREST_OPTIONS = [
-  'Python', 'React', 'Photography', 'Gaming', 'Football', 'Anime', 
-  'Hiking', 'Music Production', 'Startups', 'Blockchain', 'Reading', 'Lo-fi'
+const INTERESTS = [
+  'Coding', 'Design', 'Hackathons', 'Gaming', 'Greek Life', 
+  'Entrepreneurship', 'Basketball', 'Football', 'Soccer', 
+  'Anime', 'Photography', 'Music Production', 'Hiking', 
+  'Debate', 'Theater', 'Chess', 'Investing', 'Fitness', 
+  'Cooking', 'Travel', 'Art', 'Sustainability', 'Psychology'
 ];
 
-const YEAR_OPTIONS = ['1st Year', '2nd Year', '3rd Year', '4th Year', 'Masters', 'PhD'];
+const YEAR_OPTIONS = ['Freshman', 'Sophomore', 'Junior', 'Senior', 'Masters', 'PhD'];
 
 export default function ProfilePage() {
-  const [name, setName] = useState('Anonymous Student');
-  const [branch, setBranch] = useState('');
-  const [year, setYear] = useState('');
-  const [interests, setInterests] = useState<string[]>([]);
-  const router = useRouter();
+  const { user, updateUser } = useAuth();
+  
+  const [formData, setFormData] = useState({
+    name: '',
+    year: '',
+    branch: '',
+    interests: [] as string[]
+  });
+
+  const [isSaving, setIsSaving] = useState(false);
+  const [saveStatus, setSaveStatus] = useState<'idle' | 'success' | 'error'>('idle');
+
+  useEffect(() => {
+    if (user) {
+      setFormData({
+        name: user.name || '',
+        year: user.year || '',
+        branch: user.branch || '',
+        interests: user.interests || []
+      });
+    }
+  }, [user]);
 
   const toggleInterest = (interest: string) => {
-    setInterests(prev => 
-      prev.includes(interest) ? prev.filter(i => i !== interest) : [...prev, interest]
-    );
+    setFormData(prev => {
+      const interests = prev.interests.includes(interest)
+        ? prev.interests.filter(i => i !== interest)
+        : [...prev.interests, interest];
+      return { ...prev, interests };
+    });
   };
 
-  const handleSave = () => {
-    // TODO: Send to /api/users/profile
-    router.push('/chat'); // Ready to match!
+  const handleSave = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSaving(true);
+    setSaveStatus('idle');
+
+    // Simulate API call
+    setTimeout(() => {
+      updateUser(formData);
+      setIsSaving(false);
+      setSaveStatus('success');
+      setTimeout(() => setSaveStatus('idle'), 3000);
+    }, 1000);
   };
 
   return (
-    <div className="profile-container glass animate-fade-in">
-      <div className="profile-header">
-        <h1>Setup Your Vibe</h1>
-        <p>Tell us a bit about you to help our AI find your best matches.</p>
-      </div>
+    <div className={styles.profileLayout}>
+      <Sidebar />
 
-      <div className="profile-section">
-        <label>Your Name</label>
-        <input 
-          type="text" 
-          className="input" 
-          value={name} 
-          onChange={(e) => setName(e.target.value)} 
-        />
-      </div>
-
-      <div className="profile-grid">
-        <div className="profile-section">
-          <label>Department / Branch</label>
-          <input 
-            type="text" 
-            className="input" 
-            placeholder="e.g. CSE, IT" 
-            value={branch} 
-            onChange={(e) => setBranch(e.target.value)} 
-          />
-        </div>
-        <div className="profile-section">
-          <label>Year of Study</label>
-          <select 
-            className="input" 
-            value={year} 
-            onChange={(e) => setYear(e.target.value)}
+      <main className={styles.mainContainer}>
+        <header className={styles.header}>
+          <motion.div
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            transition={{ duration: 0.6 }}
           >
-            <option value="">Select Year</option>
-            {YEAR_OPTIONS.map(y => <option key={y} value={y}>{y}</option>)}
-          </select>
+            <p className="mono" style={{ color: 'var(--accent-primary)', marginBottom: '0.5rem' }}>// USER_PROFILE_V2.0</p>
+            <h1 className="serif">Your <span style={{ color: 'var(--accent-primary)', fontStyle: 'italic' }}>Identity.</span></h1>
+            <p className="mono" style={{ color: 'var(--text-muted)' }}>Customize how you appear to the campus.</p>
+          </motion.div>
+        </header>
+
+        <div className={styles.grid}>
+          <section className={styles.formSection}>
+            <form onSubmit={handleSave}>
+              <div className={styles.section}>
+                <span className={styles.sectionTitle}>Basic Information</span>
+                <div className={styles.formGrid}>
+                  <Input 
+                    label="Display Name" 
+                    placeholder="e.g. Alex" 
+                    value={formData.name}
+                    onChange={e => setFormData({...formData, name: e.target.value})}
+                    fullWidth
+                  />
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <label className="mono" style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>Year of Study</label>
+                    <select 
+                      className="input" 
+                      style={{ 
+                        width: '100%', 
+                        padding: '0.75rem', 
+                        backgroundColor: 'var(--bg-primary)', 
+                        border: '1px solid var(--border-light)',
+                        borderRadius: 'var(--border-radius)',
+                        color: 'var(--text-primary)',
+                        fontFamily: 'inherit'
+                      }}
+                      value={formData.year}
+                      onChange={e => setFormData({...formData, year: e.target.value})}
+                    >
+                      <option value="">Select Year</option>
+                      {YEAR_OPTIONS.map(y => <option key={y} value={y}>{y}</option>)}
+                    </select>
+                  </div>
+                </div>
+                <Input 
+                  label="Major / Program" 
+                  placeholder="e.g. Computer Science" 
+                  value={formData.branch}
+                  onChange={e => setFormData({...formData, branch: e.target.value})}
+                  fullWidth
+                />
+              </div>
+
+              <div className={styles.section}>
+                <span className={styles.sectionTitle}>Your Interests</span>
+                <p className="mono" style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '1rem' }}>
+                  Choose what defines you. This helps our AI match your vibes.
+                </p>
+                <div className={styles.interestGrid}>
+                  {INTERESTS.map(interest => (
+                    <div 
+                      key={interest} 
+                      onClick={() => toggleInterest(interest)}
+                      className={styles.interestBtn}
+                    >
+                      <Tag 
+                        label={interest} 
+                        variant={formData.interests.includes(interest) ? 'primary' : 'outline'} 
+                      />
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', alignItems: 'center', gap: '2rem' }}>
+                <Button 
+                  type="submit" 
+                  variant="primary" 
+                  size="lg" 
+                  disabled={isSaving}
+                  style={{ minWidth: '200px' }}
+                >
+                  {isSaving ? 'Saving...' : 'Update Profile'}
+                </Button>
+                {saveStatus === 'success' && (
+                  <motion.span 
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="mono" 
+                    style={{ color: 'var(--accent-primary)', fontSize: '0.875rem' }}
+                  >
+                    ✓ Profile updated successfully
+                  </motion.span>
+                )}
+              </div>
+            </form>
+
+            <div className={styles.dangerZone}>
+              <h3 className="serif" style={{ color: 'var(--danger)', marginBottom: '0.5rem' }}>Danger Zone</h3>
+              <p className="mono" style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '1.5rem' }}>
+                Once you deactivate your account, there is no going back. Please be certain.
+              </p>
+              <Button variant="danger" size="sm">Deactivate Account</Button>
+            </div>
+          </section>
+
+          <aside className={styles.statsSidebar}>
+            <div className={styles.statCard}>
+              <span className={styles.statLabel}>Vibe Score</span>
+              <div className={styles.statValue}>{user?.vibeScore || '7.5'}</div>
+              <p className="mono" style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
+                Your score is based on etiquette and positive matches.
+              </p>
+              <div className={styles.rankBadge}>
+                <Badge label="Elite Student" variant="primary" />
+              </div>
+            </div>
+
+            <Card glass style={{ padding: '1.5rem' }}>
+              <span className={styles.statLabel}>Verification</span>
+              <div style={{ marginTop: '1rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                <div style={{ color: 'var(--accent-primary)', fontSize: '1.5rem' }}>✓</div>
+                <div>
+                  <p className="mono" style={{ fontSize: '0.875rem' }}>{user?.college}</p>
+                  <p className="mono" style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Institutional access active</p>
+                </div>
+              </div>
+            </Card>
+
+            <Card style={{ padding: '1.5rem', backgroundColor: 'var(--bg-surface-elevated)' }}>
+              <span className={styles.statLabel}>Campus Activity</span>
+              <div style={{ marginTop: '1rem' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                  <span className="mono" style={{ fontSize: '0.75rem' }}>Matches made</span>
+                  <span className="mono" style={{ fontSize: '0.75rem', color: 'var(--accent-primary)' }}>124</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
+                  <span className="mono" style={{ fontSize: '0.75rem' }}>Confessions posted</span>
+                  <span className="mono" style={{ fontSize: '0.75rem', color: 'var(--accent-secondary)' }}>12</span>
+                </div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                  <span className="mono" style={{ fontSize: '0.75rem' }}>Stars received</span>
+                  <span className="mono" style={{ fontSize: '0.75rem', color: 'var(--accent-tertiary)' }}>89</span>
+                </div>
+              </div>
+            </Card>
+          </aside>
         </div>
-      </div>
-
-      <div className="profile-section">
-        <label>Your Interests (Select at least 3)</label>
-        <div className="interests-grid">
-          {INTEREST_OPTIONS.map(interest => (
-            <button 
-              key={interest} 
-              className={`interest-chip ${interests.includes(interest) ? 'active' : ''}`}
-              onClick={() => toggleInterest(interest)}
-            >
-              {interest}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      <button 
-        className="btn btn-primary btn-block" 
-        onClick={handleSave}
-        disabled={interests.length < 3}
-      >
-        {interests.length < 3 ? `Pick ${3 - interests.length} more` : "Ready to Start Matching"}
-      </button>
-
-      <style jsx>{`
-        .profile-container { max-width: 600px; margin: 60px auto; padding: 40px; border-radius: var(--border-radius-lg); }
-        .profile-header { text-align: center; margin-bottom: 40px; }
-        .profile-section { margin-bottom: 24px; display: flex; flex-direction: column; gap: 8px; }
-        .profile-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-        .interests-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 12px; margin-top: 8px; }
-        .interest-chip { 
-          padding: 10px; 
-          border-radius: 20px; 
-          background: var(--bg-tertiary); 
-          border: 1px solid rgba(255,255,255,0.1); 
-          color: var(--text-secondary); 
-          cursor: pointer; 
-          transition: var(--transition); 
-          font-weight: 500;
-        }
-        .interest-chip.active { background: var(--accent-gradient); color: white; border-color: transparent; }
-        .btn-block { width: 100%; padding: 16px; margin-top: 20px; font-size: 1.1rem; }
-      `}</style>
+      </main>
     </div>
   );
 }
