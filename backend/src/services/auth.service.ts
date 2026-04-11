@@ -2,8 +2,10 @@ import { prisma } from '../lib/prisma';
 import { signToken, signRefreshToken, verifyRefreshToken } from '../lib/jwt';
 import bcrypt from 'bcryptjs';
 import crypto from 'crypto';
+import { redis } from '../lib/redis';
+import emailService from './email.service';
 
-// Known India college domains (MVP mock list)
+// Known India college domains
 const KNOWN_EDU_DOMAINS = [
   'iit.ac.in', 'bits-pilani.ac.in', 'nit.ac.in', 'vit.ac.in', 'manipal.edu',
   'srm.edu.in', 'amity.edu', 'du.ac.in', 'mu.ac.in', 'mit.edu', 'stanford.edu',
@@ -13,7 +15,6 @@ const KNOWN_EDU_DOMAINS = [
 export const isValidEduEmail = (email: string): boolean => {
   const domain = email.split('@')[1]?.toLowerCase();
   if (!domain) return false;
-  // Check exact match or subdomain match
   return KNOWN_EDU_DOMAINS.some(
     (d) => domain === d || domain.endsWith(`.${d}`)
   );
@@ -23,7 +24,7 @@ export const registerWithEmail = async (data: {
   email: string;
   password: string;
   name: string;
-  collegeId: string;
+  collegeId?: string;
   year?: string;
   branch?: string;
   interests?: string[];
@@ -36,23 +37,39 @@ export const registerWithEmail = async (data: {
   if (existing) throw new Error('Email already registered.');
 
   const passwordHash = await bcrypt.hash(data.password, 12);
-  const emailVerifyToken = crypto.randomBytes(32).toString('hex');
-
+  
   const user = await prisma.user.create({
     data: {
       email: data.email,
       name: data.name,
       passwordHash,
-      emailVerifyToken,
       collegeId: data.collegeId,
       year: data.year,
       branch: data.branch,
-      interests: data.interests as any,
+      interests: JSON.stringify(data.interests || []),
     },
   });
 
-  // TODO: send verification email
-  return { user, emailVerifyToken };
+  // Generate 6-digit OTP
+  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+  await redis.set(`otp:${user.id}`, otp, 'EX', 600); // 10 mins
+
+  await emailService.sendOTP(data.email, otp);
+
+  return { user };
+};
+
+export const verifyOTP = async (userId: string, otp: string) => {
+  const cached = await redis.get(`otp:${userId}`);
+  if (!cached || cached !== otp) throw new Error('Invalid or expired OTP.');
+
+  await prisma.user.update({
+    where: { id: userId },
+    data: { isEmailVerified: true },
+  });
+
+  await redis.del(`otp:${userId}`);
+  return true;
 };
 
 export const loginWithEmail = async (email: string, password: string) => {
@@ -62,7 +79,8 @@ export const loginWithEmail = async (email: string, password: string) => {
   const valid = await bcrypt.compare(password, user.passwordHash);
   if (!valid) throw new Error('Invalid credentials.');
 
-  if (user.isBanned) throw new Error('Account suspended. Contact support.');
+  if (user.isBanned) throw new Error('Account suspended.');
+  if (!user.isEmailVerified) throw new Error('Email not verified.');
 
   const payload = { userId: user.id, email: user.email, role: user.role };
   const accessToken = signToken(payload);
@@ -74,6 +92,16 @@ export const loginWithEmail = async (email: string, password: string) => {
   });
 
   return { accessToken, refreshToken, user };
+};
+
+export const forgotPassword = async (email: string) => {
+  const user = await prisma.user.findUnique({ where: { email } });
+  if (!user) return; // Silent fail for security
+
+  const resetToken = crypto.randomBytes(32).toString('hex');
+  await redis.set(`reset:${resetToken}`, user.id, 'EX', 3600); // 1 hour
+
+  await emailService.sendPasswordReset(email, resetToken);
 };
 
 export const refreshTokens = async (token: string) => {
@@ -95,18 +123,6 @@ export const refreshTokens = async (token: string) => {
   return { accessToken, refreshToken: newRefreshToken };
 };
 
-export const verifyEmail = async (token: string) => {
-  const user = await prisma.user.findFirst({ where: { emailVerifyToken: token } });
-  if (!user) throw new Error('Invalid or expired verification link.');
-
-  await prisma.user.update({
-    where: { id: user.id },
-    data: { isEmailVerified: true, emailVerifyToken: null },
-  });
-
-  return user;
-};
-
 export const googleOAuthLogin = async (data: {
   googleId: string;
   email: string;
@@ -123,16 +139,10 @@ export const googleOAuthLogin = async (data: {
   });
 
   if (!user) {
-    // Auto-detect college from domain
     const domain = data.email.split('@')[1];
     let college = await prisma.college.findUnique({ where: { domain } });
 
-    if (!college && data.collegeId) {
-      college = await prisma.college.findUnique({ where: { id: data.collegeId } });
-    }
-
     if (!college) {
-      // Create a placeholder college entry
       college = await prisma.college.create({
         data: { name: domain, domain },
       });
@@ -148,14 +158,7 @@ export const googleOAuthLogin = async (data: {
         isEmailVerified: true,
       },
     });
-  } else if (!user.googleId) {
-    user = await prisma.user.update({
-      where: { id: user.id },
-      data: { googleId: data.googleId, avatarUrl: data.avatarUrl },
-    });
   }
-
-  if (user.isBanned) throw new Error('Account suspended. Contact support.');
 
   const payload = { userId: user.id, email: user.email, role: user.role };
   const accessToken = signToken(payload);

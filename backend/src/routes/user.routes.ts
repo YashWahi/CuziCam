@@ -7,5 +7,6 @@ const router = Router();
 router.get('/profile', authenticate, userController.getProfile);
 router.put('/profile', authenticate, userController.updateProfile);
 router.get('/connections', authenticate, userController.getConnections);
+router.get('/leaderboard', authenticate, userController.getLeaderboard);
 
 export default router;

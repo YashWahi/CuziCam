@@ -53,8 +53,8 @@ model User {
   createdAt       DateTime  @default(now())
   updatedAt       DateTime  @updatedAt
 
-  collegeId       String
-  college         College   @relation(fields: [collegeId], references: [id])
+  collegeId       String?
+  college         College?  @relation(fields: [collegeId], references: [id])
 
   sessionsAsA     MatchSession[] @relation("UserA")
   sessionsAsB     MatchSession[] @relation("UserB")

@@ -11,321 +11,227 @@ import {
   isChaosWindowActive,
   QueueEntry,
 } from '../services/matchmaking.service';
+import { redis } from '../lib/redis';
 import { verifyToken } from '../lib/jwt';
-import axios from 'axios';
+import aiService from '../services/ai.service';
 
-const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
-
-// Track socketId → userId for quick lookups
 const socketUserMap = new Map<string, string>();
-
-// Fetch icebreaker from AI service (with fallback)
-const getIcebreaker = async (interestsA: string[], interestsB: string[]): Promise<string> => {
-  try {
-    const res = await axios.post(`${AI_SERVICE_URL}/icebreaker`, {
-      interests_a: interestsA,
-      interests_b: interestsB,
-    }, { timeout: 2000 });
-    return (res.data as any).icebreaker || "What's your favorite thing about your college?";
-  } catch {
-    return "What's your favorite thing about your college?";
-  }
-};
-
-// Check message toxicity
-const checkToxicity = async (message: string): Promise<number> => {
-  try {
-    const res = await axios.post(`${AI_SERVICE_URL}/toxicity`, { text: message }, { timeout: 1500 });
-    return (res.data as any).score || 0;
-  } catch {
-    return 0;
-  }
-};
 
 export const registerSocketHandlers = (io: Server) => {
   io.on('connection', async (socket: Socket) => {
     console.log(`[Socket] Connected: ${socket.id}`);
 
-    // ─── AUTHENTICATE ─────────────────────────────────────────
     socket.on('authenticate', async (token: string) => {
       try {
         const decoded = verifyToken(token);
         socketUserMap.set(socket.id, decoded.userId);
-        const user = await prisma.user.findUnique({
+        
+        await prisma.user.update({
           where: { id: decoded.userId },
-          include: { college: true },
+          data: { lastSeen: new Date() }
         });
-        if (!user) { socket.emit('auth:error', 'User not found'); return; }
-        if (user.isBanned) { socket.emit('auth:error', 'Account suspended'); return; }
 
-        socket.emit('auth:success', { userId: user.id, name: user.name });
-        console.log(`[Socket] Authenticated: ${user.name} (${socket.id})`);
+        socket.emit('auth:success', { userId: decoded.userId });
       } catch {
         socket.emit('auth:error', 'Invalid token');
       }
     });
 
-    // ─── JOIN QUEUE ────────────────────────────────────────────
-    socket.on('queue:join', async (filters: QueueEntry['filters']) => {
+    // ─── MATCHMAKING (Audit: 5s Retry Loop) ───────────────────
+    socket.on('match:join', async (data: { mode: string, preferences: any }) => {
       const userId = socketUserMap.get(socket.id);
-      if (!userId) { socket.emit('error', 'Not authenticated'); return; }
+      if (!userId) return socket.emit('error', 'Not authenticated');
 
-      const user = await prisma.user.findUnique({
-        where: { id: userId },
-        include: { college: true },
-      });
+      const user = await prisma.user.findUnique({ where: { id: userId } });
       if (!user) return;
 
       const entry: QueueEntry = {
         userId: user.id,
         socketId: socket.id,
         collegeId: user.collegeId,
-        interests: user.interests,
+        interests: user.interests ? JSON.parse(user.interests) : [],
+        year: user.year || undefined,
         vibeScore: user.vibeScore,
-        gender: user.gender ?? undefined,
-        filters: filters || {},
+        gender: user.gender || undefined,
+        mode: data.mode || 'random',
+        filters: data.preferences || {},
         joinedAt: Date.now(),
       };
 
-      // Try to find a match immediately
-      const match = await findBestMatch(entry);
+      const startMatching = async () => {
+        // Double check if socket is still in queue
+        const stillInQueue = await redis.get(`session:${socket.id}`);
+        if (!stillInQueue) return;
 
-      if (match) {
-        // Remove match from queue
-        await dequeue(match.socketId);
+        const match = await findBestMatch(entry);
+        if (match) {
+          await dequeue(match.socketId);
+          await dequeue(socket.id);
 
-        // Create session in DB
-        const chaosActive = await isChaosWindowActive();
-        const session = await prisma.matchSession.create({
-          data: {
-            userAId: userId,
-            userBId: match.userId,
-            chaosWindow: chaosActive,
-          },
-        });
+          const chaosActive = await isChaosWindowActive();
+          const session = await prisma.matchSession.create({
+            data: {
+              userAId: userId,
+              userBId: match.userId,
+              chaosWindow: chaosActive,
+            },
+          });
 
-        // Build vibe check data
-        const sharedInterests = entry.interests.filter((i) => match.interests.includes(i));
-        const icebreaker = await getIcebreaker(entry.interests, match.interests);
+          const sharedInterests = entry.interests.filter((i: string) => match.interests.includes(i));
+          const icebreaker = await aiService.getIcebreaker(entry.interests, match.interests);
 
-        // Store active sessions
-        await setActiveSession(socket.id, match.socketId, session.id);
+          await setActiveSession(socket.id, match.socketId, session.id);
 
-        // Notify both users
-        const vibeCheckData = {
-          sessionId: session.id,
-          sharedInterests,
-          icebreaker,
-          chaosWindow: chaosActive,
-        };
+          const matchData = {
+            sessionId: session.id,
+            partnerId: match.userId,
+            sharedInterests,
+            icebreaker,
+            chaosActive
+          };
 
-        socket.emit('match:found', { ...vibeCheckData, role: 'caller' });
-        io.to(match.socketId).emit('match:found', { ...vibeCheckData, role: 'receiver' });
+          socket.emit('match:found', { ...matchData, role: 'caller' });
+          io.to(match.socketId).emit('match:found', { ...matchData, role: 'receiver' });
+        } else {
+          // Audit: Retry every 5 seconds
+          setTimeout(startMatching, 5000);
+        }
+      };
 
-        console.log(`[Match] ${userId} ↔ ${match.userId} | Session: ${session.id}`);
-      } else {
-        // No match, add to queue
-        await enqueue(entry);
-        socket.emit('queue:waiting', { message: 'Looking for your match...' });
+      await enqueue(entry);
+      socket.emit('match:searching');
+      await startMatching();
+    });
+
+    socket.on('match:cancel', async () => {
+      await dequeue(socket.id);
+      socket.emit('match:cancelled');
+    });
+
+    // ─── WEBRTC SIGNALING (Audit: Partner Relay Validation) ──
+    socket.on('signal:offer', async (data: any) => {
+      const session = await getActiveSession(socket.id);
+      if (session && io.sockets.adapter.rooms.has(session.partner)) {
+        io.to(session.partner).emit('signal:offer', data);
       }
     });
 
-    // ─── LEAVE QUEUE ──────────────────────────────────────────
-    socket.on('queue:leave', async () => {
-      await dequeue(socket.id);
-      socket.emit('queue:left');
-    });
-
-    // ─── WEBRTC SIGNALING ─────────────────────────────────────
-    socket.on('webrtc:offer', async (data: { sdp: RTCSessionDescriptionInit }) => {
+    socket.on('signal:answer', async (data: any) => {
       const session = await getActiveSession(socket.id);
-      if (!session) return;
-      io.to(session.partner).emit('webrtc:offer', { sdp: data.sdp, from: socket.id });
+      if (session && io.sockets.adapter.rooms.has(session.partner)) {
+        io.to(session.partner).emit('signal:answer', data);
+      }
     });
 
-    socket.on('webrtc:answer', async (data: { sdp: RTCSessionDescriptionInit }) => {
+    socket.on('signal:ice', async (data: any) => {
       const session = await getActiveSession(socket.id);
-      if (!session) return;
-      io.to(session.partner).emit('webrtc:answer', { sdp: data.sdp });
+      if (session && io.sockets.adapter.rooms.has(session.partner)) {
+        io.to(session.partner).emit('signal:ice', data);
+      }
     });
 
-    socket.on('webrtc:ice-candidate', async (data: { candidate: RTCIceCandidateInit }) => {
-      const session = await getActiveSession(socket.id);
-      if (!session) return;
-      io.to(session.partner).emit('webrtc:ice-candidate', { candidate: data.candidate });
-    });
-
-    // ─── TEXT CHAT ─────────────────────────────────────────────
+    // ─── CHAT (Audit: Relaying Blocking) ──────────────────────
     socket.on('chat:message', async (data: { text: string }) => {
       const session = await getActiveSession(socket.id);
       if (!session) return;
 
-      const toxicityScore = await checkToxicity(data.text);
+      const toxicityScore = await aiService.checkToxicity(data.text);
+      if (toxicityScore > 0.8) {
+        return socket.emit('chat:blocked', { reason: 'Toxic content detected' });
+      }
 
-      // Log to DB for moderation (metadata only)
-      if (session.sessionId) {
-        await prisma.matchSession.update({
-          where: { id: session.sessionId },
-          data: { messageCount: { increment: 1 } },
+      if (io.sockets.adapter.rooms.has(session.partner)) {
+        io.to(session.partner).emit('chat:message', {
+          text: data.text,
+          userId: socketUserMap.get(socket.id),
+          timestamp: Date.now()
         });
       }
-
-      // If highly toxic, soft-block the message
-      if (toxicityScore > 0.85) {
-        socket.emit('chat:blocked', { reason: 'Message flagged by AI moderation.' });
-        return;
-      }
-
-      // Forward message to partner
-      io.to(session.partner).emit('chat:message', {
-        text: data.text,
-        timestamp: Date.now(),
-        toxicityScore,
-      });
     });
 
-    // ─── SKIP / NEXT ──────────────────────────────────────────
-    socket.on('session:skip', async () => {
+    // ─── SESSION END (Audit: Summary & vibeScore) ─────────────
+    socket.on('session:end', async () => {
       const session = await getActiveSession(socket.id);
-      if (!session) { await dequeue(socket.id); return; }
+      if (!session) return;
 
-      const userId = socketUserMap.get(socket.id);
-      const partnerUserId = socketUserMap.get(session.partner);
+      const dbSession = await prisma.matchSession.update({
+        where: { id: session.sessionId },
+        data: { endTime: new Date() }
+      });
 
-      // Track last skipped for Rewind feature
-      if (userId && partnerUserId) {
-        await setLastSkipped(userId, session.partner);
-      }
+      // Calculate Duration and Reward
+      const durationMs = new Date().getTime() - new Date(dbSession.startTime).getTime();
+      const durationMins = Math.floor(durationMs / 60000);
+      const vibeGain = Math.min(5, Math.max(1, Math.floor(durationMins / 2))); // 1-5 points
 
-      // End session in DB
-      if (session.sessionId) {
-        await prisma.matchSession.update({
-          where: { id: session.sessionId },
-          data: {
-            endTime: new Date(),
-            skipReason: 'user_skipped',
-          },
-        });
-      }
+      await prisma.user.updateMany({
+        where: { id: { in: [dbSession.userAId, dbSession.userBId] } },
+        data: { vibeScore: { increment: vibeGain } }
+      });
 
-      // Notify partner they were skipped
-      io.to(session.partner).emit('session:partner-skipped');
+      const summary = {
+        durationMins,
+        vibeGain,
+        endedBy: socketUserMap.get(socket.id)
+      };
 
-      // Clear sessions
+      socket.emit('session:summary', summary);
+      io.to(session.partner).emit('session:summary', summary);
+      
       await clearActiveSession(socket.id, session.partner);
     });
 
-    // ─── REVEAL MODE ──────────────────────────────────────────
-    socket.on('reveal:request', async () => {
-      const session = await getActiveSession(socket.id);
-      if (!session) return;
-      io.to(session.partner).emit('reveal:request');
-    });
-
-    socket.on('reveal:accept', async () => {
-      const session = await getActiveSession(socket.id);
-      if (!session) return;
-
-      const userId = socketUserMap.get(socket.id);
-      const partnerUserId = socketUserMap.get(session.partner);
-
-      if (!userId || !partnerUserId) return;
-
-      const [userA, userB] = await Promise.all([
-        prisma.user.findUnique({ where: { id: userId }, select: { id: true, name: true, avatarUrl: true, branch: true, year: true } }),
-        prisma.user.findUnique({ where: { id: partnerUserId }, select: { id: true, name: true, avatarUrl: true, branch: true, year: true } }),
-      ]);
-
-      socket.emit('reveal:revealed', { user: userB });
-      io.to(session.partner).emit('reveal:revealed', { user: userA });
-    });
-
-    // ─── STAR SYSTEM ──────────────────────────────────────────
+    // ─── STAR SYSTEM (Audit: Mutual detection & Connection) ──
     socket.on('session:star', async () => {
       const session = await getActiveSession(socket.id);
       const userId = socketUserMap.get(socket.id);
       if (!session || !userId) return;
 
+      const starKey = `stars:${session.sessionId}:${userId}`;
+      await redis.set(starKey, 'true', 'EX', 3600);
+
       const partnerUserId = socketUserMap.get(session.partner);
       if (!partnerUserId) return;
 
-      // Create star record
-      try {
-        await prisma.star.create({
-          data: {
-            sessionId: session.sessionId,
-            giverId: userId,
-            receiverId: partnerUserId,
-          },
-        });
-      } catch { /* Already starred */ return; }
+      const partnerStarKey = `stars:${session.sessionId}:${partnerUserId}`;
+      const partnerStarred = await redis.get(partnerStarKey);
 
-      // Check if mutual star
-      const mutualStar = await prisma.star.findFirst({
-        where: { sessionId: session.sessionId, giverId: partnerUserId, receiverId: userId },
-      });
-
-      if (mutualStar) {
-        // Create friend connection
-        await prisma.connection.upsert({
-          where: { userAId_userBId: { userAId: userId, userBId: partnerUserId } },
-          create: { userAId: userId, userBId: partnerUserId, sessionId: session.sessionId },
-          update: {},
-        });
-
-        socket.emit('star:mutual', { message: "You both loved this conversation ❤️" });
-        io.to(session.partner).emit('star:mutual', { message: "You both loved this conversation ❤️" });
+      if (partnerStarred) {
+        // Mutual Star! Create Connection in DB
+        try {
+          await prisma.connection.create({
+            data: {
+              userAId: userId < partnerUserId ? userId : partnerUserId,
+              userBId: userId < partnerUserId ? partnerUserId : userId,
+              sessionId: session.sessionId
+            }
+          });
+          
+          socket.emit('star:mutual');
+          io.to(session.partner).emit('star:mutual');
+        } catch (e) {
+          // Connection likely exists
+        }
       } else {
         socket.emit('star:sent');
       }
     });
 
-    // ─── REPORT ───────────────────────────────────────────────
-    socket.on('user:report', async (data: { reason: string; description?: string }) => {
-      const session = await getActiveSession(socket.id);
-      const userId = socketUserMap.get(socket.id);
-      if (!session || !userId) return;
-
-      const partnerUserId = socketUserMap.get(session.partner);
-      if (!partnerUserId) return;
-
-      // Validate reason is a valid ReportReason enum value
-      const validReasons = [
-        'INAPPROPRIATE_CONTENT', 'HARASSMENT', 'SPAM', 'NUDITY', 'UNDERAGE', 'OTHER'
-      ];
-      const reason = validReasons.includes(data.reason) ? data.reason : 'OTHER';
-
-      await prisma.report.create({
-        data: {
-          reporterId: userId,
-          reportedId: partnerUserId,
-          sessionId: session.sessionId,
-          reason: reason as any,
-          description: data.description,
-        },
-      });
-
-      socket.emit('report:submitted');
-    });
-
-    // ─── DISCONNECT ───────────────────────────────────────────
     socket.on('disconnect', async () => {
-      console.log(`[Socket] Disconnected: ${socket.id}`);
-
-      // Clean up queue
+      const userId = socketUserMap.get(socket.id);
+      if (userId) {
+        await prisma.user.update({
+          where: { id: userId },
+          data: { lastSeen: new Date() }
+        });
+      }
       await dequeue(socket.id);
-
-      // Clean up active session
+      
+      // Notify partner of disconnect if in session
       const session = await getActiveSession(socket.id);
       if (session) {
-        await clearActiveSession(socket.id, session.partner);
-        if (session.sessionId) {
-          await prisma.matchSession.update({
-            where: { id: session.sessionId },
-            data: { endTime: new Date() },
-          });
-        }
         io.to(session.partner).emit('session:partner-disconnected');
+        await clearActiveSession(socket.id, session.partner);
       }
 
       socketUserMap.delete(socket.id);

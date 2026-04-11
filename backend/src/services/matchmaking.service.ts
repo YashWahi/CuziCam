@@ -1,21 +1,17 @@
 import { redis } from '../lib/redis';
 import { prisma } from '../lib/prisma';
 
-// ──────────────────────────────────────────────────────────────
-// Queue key naming convention:
-//   queue:main           — general matchmaking pool
-//   queue:college:<id>   — college-specific pool
-//   session:<socketId>   — active user session data
-// ──────────────────────────────────────────────────────────────
-
 export interface QueueEntry {
   userId: string;
   socketId: string;
   collegeId: string;
   interests: string[];
+  year?: string;
   vibeScore: number;
   gender?: string;
+  mode: string;
   filters: {
+    genderPref?: string;
     sameCollege?: boolean;
     sameBranch?: boolean;
     branch?: string;
@@ -23,10 +19,9 @@ export interface QueueEntry {
   joinedAt: number;
 }
 
-const MAIN_QUEUE_KEY = 'queue:main';
+const MAIN_QUEUE_KEY = 'queue:pool';
 const CHAOS_WINDOW_KEY = 'chaos:active';
 
-// ─── CHAOS WINDOW ─────────────────────────────────────────────
 export const isChaosWindowActive = async (): Promise<boolean> => {
   const val = await redis.get(CHAOS_WINDOW_KEY);
   return val === 'true';
@@ -34,7 +29,7 @@ export const isChaosWindowActive = async (): Promise<boolean> => {
 
 export const setChaosWindow = async (active: boolean, ttlSeconds?: number): Promise<void> => {
   if (active && ttlSeconds) {
-    await redis.setEx(CHAOS_WINDOW_KEY, ttlSeconds, 'true');
+    await redis.set(CHAOS_WINDOW_KEY, 'true', 'EX', ttlSeconds);
   } else if (active) {
     await redis.set(CHAOS_WINDOW_KEY, 'true');
   } else {
@@ -42,66 +37,61 @@ export const setChaosWindow = async (active: boolean, ttlSeconds?: number): Prom
   }
 };
 
-// ─── QUEUE MANAGEMENT ─────────────────────────────────────────
 export const enqueue = async (entry: QueueEntry): Promise<void> => {
-  const key = MAIN_QUEUE_KEY;
-  // Store full entry as JSON in a sorted set (score = joinedAt for FIFO)
-  await redis.zAdd(key, { score: entry.joinedAt, value: JSON.stringify(entry) });
-  // Also store a reverse lookup: socketId → entry
-  await redis.set(`session:${entry.socketId}`, JSON.stringify(entry), { EX: 3600 });
+  await redis.zadd(MAIN_QUEUE_KEY, entry.joinedAt, JSON.stringify(entry));
+  await redis.set(`session:${entry.socketId}`, JSON.stringify(entry), 'EX', 3600);
 };
 
 export const dequeue = async (socketId: string): Promise<void> => {
   const sessionData = await redis.get(`session:${socketId}`);
   if (!sessionData) return;
-
-  await redis.zRem(MAIN_QUEUE_KEY, sessionData);
+  await redis.zrem(MAIN_QUEUE_KEY, sessionData);
   await redis.del(`session:${socketId}`);
 };
 
-// ─── SCORING & MATCHING ───────────────────────────────────────
 const computeMatchScore = (a: QueueEntry, b: QueueEntry, chaosActive: boolean): number => {
   let score = 0;
 
-  // Interest overlap — most important signal
+  // +40 if shared interests (parse JSON string if needed, but here it's already an array in QueueEntry)
   const sharedInterests = a.interests.filter((i) => b.interests.includes(i));
-  score += sharedInterests.length * 20;
+  if (sharedInterests.length > 0) score += 40;
 
-  // College match
-  if (a.collegeId === b.collegeId && a.filters.sameCollege) score += 15;
+  // +25 if same college
+  if (a.collegeId === b.collegeId) score += 25;
 
-  // Branch match
-  if (a.filters.branch && a.filters.branch === b.filters.branch) score += 10;
+  // +15 if same year
+  if (a.year && a.year === b.year) score += 15;
 
-  // Vibe score proximity (closer scores = better match)
-  const vibeDiff = Math.abs(a.vibeScore - b.vibeScore);
-  score += Math.max(0, 10 - vibeDiff * 2);
+  // +10 if same mode preference
+  if (a.mode === b.mode) score += 10;
 
-  // During chaos window, reduce gender-based filtering effects
-  if (chaosActive && !a.filters.sameCollege && !b.filters.sameCollege) {
-    score += 5; // slight nudge to ensure chaos window pairings work
+  // +10 wait bonus (1pt per 5 seconds in queue, max 10)
+  const waitA = (Date.now() - a.joinedAt) / 5000;
+  const waitB = (Date.now() - b.joinedAt) / 5000;
+  score += Math.min(10, Math.floor(waitA + waitB));
+
+  // return -1 if gender preference doesn't match AND chaos is not active
+  if (!chaosActive) {
+    if (a.filters.genderPref && a.filters.genderPref !== b.gender) return -1;
+    if (b.filters.genderPref && b.filters.genderPref !== a.gender) return -1;
   }
-
-  // Penalize high wait time disparity (fairness)
-  const waitDiff = Math.abs((Date.now() - a.joinedAt) - (Date.now() - b.joinedAt));
-  if (waitDiff > 30000) score -= 5; // penalize if one user waited 30s more
 
   return score;
 };
 
 export const findBestMatch = async (entry: QueueEntry): Promise<QueueEntry | null> => {
   const chaosActive = await isChaosWindowActive();
+  const rawEntries = await redis.zrange(MAIN_QUEUE_KEY, 0, -1);
 
-  // Get all waiting users (up to 200 at a time for efficiency)
-  const rawEntries = await redis.zRange(MAIN_QUEUE_KEY, 0, 199, { REV: false });
+  // Threshold starts at 60, decreases by 10 every 15 seconds of waiting, floor at 20
+  const waitSeconds = (Date.now() - entry.joinedAt) / 1000;
+  const threshold = Math.max(20, 60 - Math.floor(waitSeconds / 15) * 10);
 
   let bestMatch: QueueEntry | null = null;
-  let bestScore = -Infinity;
+  let bestScore = -1;
 
   for (const raw of rawEntries) {
     const candidate: QueueEntry = JSON.parse(raw);
-
-    // Don't match with self
     if (candidate.socketId === entry.socketId || candidate.userId === entry.userId) continue;
 
     // Check blocks
@@ -116,7 +106,7 @@ export const findBestMatch = async (entry: QueueEntry): Promise<QueueEntry | nul
     if (isBlocked) continue;
 
     const score = computeMatchScore(entry, candidate, chaosActive);
-    if (score > bestScore) {
+    if (score >= threshold && score > bestScore) {
       bestScore = score;
       bestMatch = candidate;
     }
@@ -125,16 +115,11 @@ export const findBestMatch = async (entry: QueueEntry): Promise<QueueEntry | nul
   return bestMatch;
 };
 
-// ─── SESSION TRACKING ─────────────────────────────────────────
-export const setActiveSession = async (
-  socketIdA: string,
-  socketIdB: string,
-  sessionId: string
-): Promise<void> => {
+export const setActiveSession = async (socketIdA: string, socketIdB: string, sessionId: string) => {
   const data = JSON.stringify({ sessionId, partner: socketIdB });
   const dataB = JSON.stringify({ sessionId, partner: socketIdA });
-  await redis.set(`active:${socketIdA}`, data, { EX: 7200 });
-  await redis.set(`active:${socketIdB}`, dataB, { EX: 7200 });
+  await redis.set(`active:${socketIdA}`, data, 'EX', 7200);
+  await redis.set(`active:${socketIdB}`, dataB, 'EX', 7200);
 };
 
 export const getActiveSession = async (socketId: string) => {
@@ -142,16 +127,15 @@ export const getActiveSession = async (socketId: string) => {
   return data ? JSON.parse(data) : null;
 };
 
-export const clearActiveSession = async (socketIdA: string, socketIdB: string): Promise<void> => {
+export const clearActiveSession = async (socketIdA: string, socketIdB: string) => {
   await redis.del(`active:${socketIdA}`);
   await redis.del(`active:${socketIdB}`);
 };
 
-// ─── REWIND TRACKING (last skipped user, per user) ────────────
-export const setLastSkipped = async (userId: string, matchedSocketId: string): Promise<void> => {
-  await redis.set(`rewind:${userId}`, matchedSocketId, { EX: 3600 });
+export const setLastSkipped = async (userId: string, matchedSocketId: string) => {
+  await redis.set(`rewind:${userId}`, matchedSocketId, 'EX', 3600);
 };
 
-export const getLastSkipped = async (userId: string): Promise<string | null> => {
+export const getLastSkipped = async (userId: string) => {
   return redis.get(`rewind:${userId}`);
 };

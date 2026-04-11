@@ -6,12 +6,11 @@ export const register = async (req: Request, res: Response) => {
   try {
     const { email, password, name, collegeId, year, branch, interests } = req.body;
     
-    // Initial validation
-    if (!email || !password || !name || !collegeId) {
+    if (!email || !password || !name) {
       return res.status(400).json({ error: 'Missing required fields' });
     }
 
-    const { user, emailVerifyToken } = await authService.registerWithEmail({
+    const { user } = await authService.registerWithEmail({
       email,
       password,
       name,
@@ -22,7 +21,7 @@ export const register = async (req: Request, res: Response) => {
     });
 
     res.status(201).json({
-      message: 'Registration successful. Please check your email to verify.',
+      message: 'Registration successful. OTP sent to your email.',
       userId: user.id
     });
   } catch (error: any) {
@@ -35,8 +34,23 @@ export const login = async (req: Request, res: Response) => {
     const { email, password } = req.body;
     const { accessToken, refreshToken, user } = await authService.loginWithEmail(email, password);
 
+    // Set HTTP-only cookies
+    res.cookie('accessToken', accessToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 3600000 // 1h
+    });
+
+    res.cookie('refreshToken', refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 7 * 24 * 3600000 // 7d
+    });
+
     res.json({
-      accessToken,
+      accessToken, // Keep for legacy/manual header support if needed
       refreshToken,
       user: {
         id: user.id,
@@ -47,31 +61,62 @@ export const login = async (req: Request, res: Response) => {
       }
     });
   } catch (error: any) {
-    res.status(401).json({ error: error.message });
-  }
-};
-
-export const refresh = async (req: Request, res: Response) => {
-  try {
-    const { refreshToken } = req.body;
-    if (!refreshToken) return res.status(400).json({ error: 'Refresh token required' });
-
-    const tokens = await authService.refreshTokens(refreshToken);
-    res.json(tokens);
-  } catch (error: any) {
-    res.status(401).json({ error: error.message });
+    const status = error.cause === 'UNVERIFIED' ? 403 : 401;
+    res.status(status).json({ error: error.message, code: error.cause });
   }
 };
 
 export const verifyEmail = async (req: Request, res: Response) => {
   try {
-    const { token } = req.query;
-    if (!token || typeof token !== 'string') return res.status(400).json({ error: 'Token is required' });
+    const { userId, otp } = req.body;
+    if (!userId || !otp) return res.status(400).json({ error: 'UserId and OTP are required' });
 
-    await authService.verifyEmail(token);
+    await authService.verifyOTP(userId, otp);
     res.json({ message: 'Email verified successfully' });
   } catch (error: any) {
     res.status(400).json({ error: error.message });
+  }
+};
+
+export const forgotPassword = async (req: Request, res: Response) => {
+  try {
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ error: 'Email is required' });
+    await authService.forgotPassword(email);
+    res.json({ message: 'If that email exists, a reset link has been sent.' });
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
+};
+
+export const refresh = async (req: Request, res: Response) => {
+  try {
+    const refreshTokenFromCookie = req.cookies.refreshToken;
+    const { refreshToken: refreshTokenFromBody } = req.body;
+    
+    const token = refreshTokenFromCookie || refreshTokenFromBody;
+    if (!token) return res.status(400).json({ error: 'Refresh token required' });
+
+    const tokens = await authService.refreshTokens(token);
+
+    // Set HTTP-only cookies
+    res.cookie('accessToken', tokens.accessToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 3600000 // 1h
+    });
+
+    res.cookie('refreshToken', tokens.refreshToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      maxAge: 7 * 24 * 3600000 // 7d
+    });
+
+    res.json(tokens);
+  } catch (error: any) {
+    res.status(401).json({ error: error.message });
   }
 };
 
@@ -110,5 +155,25 @@ export const getColleges = async (req: Request, res: Response) => {
     res.json(colleges);
   } catch (error) {
     res.status(500).json({ error: 'Failed to fetch colleges' });
+  }
+};
+
+export const getMe = async (req: Request, res: Response) => {
+  try {
+    const userId = (req as any).user?.userId;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const user = await prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        college: { select: { id: true, name: true, domain: true } }
+      }
+    });
+
+    if (!user) return res.status(404).json({ error: 'User not found' });
+
+    res.json(user);
+  } catch (error) {
+    res.status(500).json({ error: 'Internal server error' });
   }
 };
