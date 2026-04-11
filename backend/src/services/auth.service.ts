@@ -171,3 +171,15 @@ export const googleOAuthLogin = async (data: {
 
   return { accessToken, refreshToken, user };
 };
+
+export const resendOTP = async (userId: string) => {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) throw new Error('User not found.');
+  if (user.isEmailVerified) throw new Error('Email already verified.');
+
+  const otp = Math.floor(100000 + Math.random() * 900000).toString();
+  await redis.set(`otp:${user.id}`, otp, 'EX', 600); // 10 mins
+
+  await emailService.sendOTP(user.email, otp);
+  return true;
+};

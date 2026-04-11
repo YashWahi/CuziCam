@@ -1,10 +1,8 @@
 'use client';
 
-import React, { useEffect, useState, useRef, useCallback } from 'react';
-import { io, Socket } from 'socket.io-client';
-import { motion, AnimatePresence } from 'framer-motion';
-import { useParams, useRouter } from 'next/navigation';
+import { useSearchParams, useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
+import { useSocket } from '@/context/SocketContext';
 import VideoPlayer from '@/components/VideoPlayer';
 import { Button } from '@/components/Button';
 import { Badge } from '@/components/Badge';
@@ -20,23 +18,21 @@ const ICE_SERVERS = {
 
 export default function ChatSessionPage() {
   const { sessionId } = useParams();
+  const searchParams = useSearchParams();
+  const role = searchParams.get('role');
   const router = useRouter();
   const { user } = useAuth();
+  const { socket, isConnected } = useSocket();
   
-  const [socket, setSocket] = useState<Socket | null>(null);
   const [status, setStatus] = useState<string>('Initializing...');
-  
-  // Media streams
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
-  
-  // States
   const [isRevealed, setIsRevealed] = useState(false);
   const [vibeData, setVibeData] = useState<{ icebreaker: string, sharedInterests: string[] } | null>(null);
   const [messages, setMessages] = useState<{text: string, isSelf: boolean, id: number}[]>([]);
   const [chatInput, setChatInput] = useState('');
+  const [isStarred, setIsStarred] = useState(false);
   
-  // WebRTC
   const peerConnection = useRef<RTCPeerConnection | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
@@ -47,100 +43,98 @@ export default function ChatSessionPage() {
     }
   }, [messages]);
 
-  // Initialize Socket & Media
+  // Get Media & Initialize
   useEffect(() => {
-    const s = io('http://localhost:4000');
-    setSocket(s);
-
-    navigator.mediaDevices.getUserMedia({ video: true, audio: true })
-      .then(stream => {
+    let stream: MediaStream | null = null;
+    
+    const initMedia = async () => {
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
         setLocalStream(stream);
-        const token = localStorage.getItem('cuzicam_token');
-        if (token) {
-          s.emit('authenticate', token);
-        } else {
-          setStatus('Authentication required.');
-          router.push('/signin');
-        }
-      })
-      .catch(err => {
+        setStatus('Ready');
+      } catch (err) {
         console.error(err);
         setStatus('Camera access required to chat.');
-      });
+      }
+    };
+
+    initMedia();
 
     return () => {
-      s.disconnect();
-      localStream?.getTracks().forEach(t => t.stop());
+      stream?.getTracks().forEach(t => t.stop());
+      if (peerConnection.current) {
+        peerConnection.current.close();
+      }
     };
   }, []);
 
-  // Setup Socket listeners
+  // WebRTC Signaling Logic
   useEffect(() => {
-    if (!socket || !localStream) return;
+    if (!socket || !localStream || !isConnected) return;
 
-    socket.on('auth:success', () => {
-      setStatus('Waiting for connection...');
-      // If we already have a sessionId, the backend should ideally handle reconnection or joining that specific session.
-      // For now, we follow the existing flow.
-      socket.emit('queue:join', {});
+    const pc = new RTCPeerConnection(ICE_SERVERS);
+    peerConnection.current = pc;
+
+    localStream.getTracks().forEach(track => {
+      pc.addTrack(track, localStream);
     });
 
-    socket.on('match:found', async (data) => {
-      setStatus('Matched!');
-      setVibeData({ icebreaker: data.icebreaker, sharedInterests: data.sharedInterests });
-      
-      const pc = new RTCPeerConnection(ICE_SERVERS);
-      peerConnection.current = pc;
+    pc.ontrack = (event) => {
+      setRemoteStream(event.streams[0]);
+      setStatus('Connected');
+    };
 
-      localStream.getTracks().forEach(track => {
-        pc.addTrack(track, localStream);
-      });
-
-      pc.ontrack = (event) => {
-        setRemoteStream(event.streams[0]);
-      };
-
-      pc.onicecandidate = (event) => {
-        if (event.candidate) {
-          socket.emit('webrtc:ice-candidate', { candidate: event.candidate });
-        }
-      };
-
-      if (data.role === 'caller') {
-        const offer = await pc.createOffer();
-        await pc.setLocalDescription(offer);
-        socket.emit('webrtc:offer', { sdp: offer });
+    pc.onicecandidate = (event) => {
+      if (event.candidate) {
+        socket.emit('signal:ice', { candidate: event.candidate });
       }
-      
-      setTimeout(() => {
-        setStatus('Connected');
-        setVibeData(null);
-      }, 5000);
-    });
+    };
 
-    socket.on('webrtc:offer', async (data) => {
-      const pc = peerConnection.current;
-      if (!pc) return;
-      await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+    // Listeners for signaling
+    socket.on('signal:offer', async (data) => {
+      await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
-      socket.emit('webrtc:answer', { sdp: answer });
+      socket.emit('signal:answer', { answer });
     });
 
-    socket.on('webrtc:answer', async (data) => {
-      const pc = peerConnection.current;
-      if (!pc) return;
-      await pc.setRemoteDescription(new RTCSessionDescription(data.sdp));
+    socket.on('signal:answer', async (data) => {
+      await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
     });
 
-    socket.on('webrtc:ice-candidate', async (data) => {
-      const pc = peerConnection.current;
-      if (!pc) return;
-      await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+    socket.on('signal:ice', async (data) => {
+      if (data.candidate) {
+        try {
+          await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
+        } catch (e) {
+          console.error('[WebRTC] Error adding ICE candidate', e);
+        }
+      }
     });
 
+    // Chat listeners
     socket.on('chat:message', (data) => {
       setMessages(prev => [...prev, { text: data.text, isSelf: false, id: Date.now() }]);
+    });
+
+    socket.on('chat:blocked', (data) => {
+      alert(`Message blocked: ${data.reason}`);
+    });
+
+    // Match metadata (redundant but good for safety)
+    socket.on('match:found', (data) => {
+       setVibeData({ icebreaker: data.icebreaker, sharedInterests: data.sharedInterests });
+       setTimeout(() => setVibeData(null), 8000);
+    });
+
+    socket.on('star:sent', () => {
+      setStatus('Star Sent! ⭐');
+      setTimeout(() => setStatus('Connected'), 2000);
+    });
+
+    socket.on('star:mutual', () => {
+      setStatus('MUTUAL STAR! 💖');
+      // Potential celebration effect here
     });
 
     socket.on('session:partner-disconnected', () => {
@@ -148,41 +142,52 @@ export default function ChatSessionPage() {
       setRemoteStream(null);
     });
 
-    socket.on('session:partner-skipped', () => {
-      setStatus('Partner skipped.');
-      setRemoteStream(null);
+    socket.on('session:summary', (summary) => {
+       console.log('Session Summary:', summary);
+       // Could redirect to a summary page if needed
     });
 
+    // If I'm the caller, initiate the offer immediately
+    if (role === 'caller') {
+      const createOffer = async () => {
+        const offer = await pc.createOffer();
+        await pc.setLocalDescription(offer);
+        socket.emit('signal:offer', { offer });
+      };
+      createOffer();
+    }
+
     return () => {
-      socket.off('auth:success');
-      socket.off('match:found');
-      socket.off('webrtc:offer');
-      socket.off('webrtc:answer');
-      socket.off('webrtc:ice-candidate');
+      socket.off('signal:offer');
+      socket.off('signal:answer');
+      socket.off('signal:ice');
       socket.off('chat:message');
+      socket.off('chat:blocked');
+      socket.off('star:sent');
+      socket.off('star:mutual');
       socket.off('session:partner-disconnected');
-      socket.off('session:partner-skipped');
+      socket.off('session:summary');
+      pc.close();
     };
-  }, [socket, localStream]);
+  }, [socket, isConnected, localStream, role]);
 
   const handleSkip = () => {
-    socket?.emit('session:skip');
+    socket?.emit('session:end');
     router.push('/queue');
   };
 
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!chatInput.trim() || !socket) return;
+    if (!chatInput.trim() || !socket || !isConnected) return;
     socket.emit('chat:message', { text: chatInput });
     setMessages(prev => [...prev, { text: chatInput, isSelf: true, id: Date.now() }]);
     setChatInput('');
   };
 
   const handleStar = () => {
-    socket?.emit('session:star');
-    // Subtle feedback instead of alert
-    setStatus('Star Sent! ⭐');
-    setTimeout(() => setStatus('Connected'), 2000);
+    if (!socket || !isConnected) return;
+    socket.emit('session:star');
+    setIsStarred(true);
   };
 
   return (

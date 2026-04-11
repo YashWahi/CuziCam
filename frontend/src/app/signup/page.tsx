@@ -33,13 +33,16 @@ export default function SignUpPage() {
 
     setLoading(true);
 
-    // Mock register logic -> redirect to onboarding
-    setTimeout(() => {
-      // Store temp signup info
-      localStorage.setItem('temp_signup_email', email);
-      localStorage.setItem('temp_signup_name', name);
-      router.push('/onboarding');
-    }, 1000);
+    try {
+      const response = await authApi.register({ name, email, password });
+      // response.data is { message, userId } based on backend controller
+      router.push(`/verify-email?userId=${response.userId}&email=${encodeURIComponent(email)}`);
+    } catch (err: any) {
+      console.error('Signup error:', err);
+      setError(err.response?.data?.error || 'Registration failed. Please try again.');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (

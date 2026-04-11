@@ -21,32 +21,31 @@ export default function SignInPage() {
     e.preventDefault();
     setError('');
 
-    if (!email) {
-      setError('Please use your college email (.edu or equivalent)');
+    if (!email || !password) {
+      setError('Please enter both email and password');
       return;
     }
 
     setLoading(true);
 
-    // Mock Login Logic
-    setTimeout(() => {
-      if (email.endsWith('.edu') || email.includes('ac.in')) {
-        login(
-          {
-            id: 'mock-id-123',
-            name: email.split('@')[0],
-            email,
-            college: email.split('@')[1],
-            vibeScore: 7.5,
-          },
-          'mock_jwt_token_123'
-        );
-        router.push('/dashboard');
-      } else {
-        setError('Incorrect email or password');
+    try {
+      const { user } = await login(email, password);
+      
+      if (!user.isVerified) {
+        router.push(`/verify-email?userId=${user.id}&email=${encodeURIComponent(email)}`);
+        return;
       }
+
+      if (!user.collegeId) {
+        router.push('/onboarding');
+      } else {
+        router.push('/dashboard');
+      }
+    } catch (err: any) {
+      setError(err.response?.data?.message || 'Login failed. Please check your credentials.');
+    } finally {
       setLoading(false);
-    }, 1000);
+    }
   };
 
   return (

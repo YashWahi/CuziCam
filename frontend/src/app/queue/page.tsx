@@ -1,34 +1,65 @@
 'use client';
 
-import React, { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
+import { useSocket } from '@/context/SocketContext';
+import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/Button';
 import { Avatar } from '@/components/Avatar';
 import styles from './page.module.css';
 
 export default function QueuePage() {
+  const { socket, isConnected } = useSocket();
+  const { user } = useAuth();
   const [onlineCount, setOnlineCount] = useState(1284);
   const [inQueue, setInQueue] = useState(42);
+  const [status, setStatus] = useState('Finding your vibe...');
   const router = useRouter();
 
   useEffect(() => {
-    // Simulate finding a match after 8 seconds
-    const timer = setTimeout(() => {
-      router.push('/chat/session-mock-abc-123');
-    }, 8000);
+    if (!socket || !isConnected) return;
 
-    // Minor fluctuation in numbers for realism
+    // Join queue as soon as we enter
+    socket.emit('match:join', { mode: 'random', preferences: {} });
+
+    socket.on('match:searching', () => {
+      setStatus('Finding your vibe...');
+    });
+
+    socket.on('match:found', (data) => {
+      setStatus('Match found! Connecting...');
+      // Store match data in state or local storage if needed, 
+      // but the chat page will also listen or we can pass via URL
+      setTimeout(() => {
+        router.push(`/chat/${data.sessionId}?role=${data.role}`);
+      }, 1500);
+    });
+
+    socket.on('error', (err) => {
+      console.error('[Queue Error]', err);
+      setStatus('Something went wrong. Retrying...');
+    });
+
+    // Minor fluctuation in numbers for realism (or fetch from server if API exists)
     const interval = setInterval(() => {
       setOnlineCount(prev => prev + (Math.random() > 0.5 ? 1 : -1));
       setInQueue(prev => prev + (Math.random() > 0.5 ? 1 : -1));
     }, 3000);
 
     return () => {
-      clearTimeout(timer);
+      socket.off('match:searching');
+      socket.off('match:found');
+      socket.off('error');
       clearInterval(interval);
     };
-  }, [router]);
+  }, [socket, isConnected, router]);
+
+  const handleCancel = () => {
+    if (socket) {
+      socket.emit('match:cancel');
+    }
+    router.push('/dashboard');
+  };
 
   return (
     <div className={styles.queueContainer}>
@@ -42,7 +73,7 @@ export default function QueuePage() {
         animate={{ opacity: 1 }}
         transition={{ duration: 1, repeat: Infinity, repeatType: 'reverse' }}
       >
-        Finding your vibe...
+        {status}
       </motion.h1>
 
       <div className={styles.matchCore}>
@@ -67,7 +98,7 @@ export default function QueuePage() {
             animate={{ scale: [1, 1.05, 1] }}
             transition={{ duration: 2, repeat: Infinity }}
           >
-            <Avatar size="lg" name="You" style={{ border: '4px solid var(--accent-primary)' }} />
+            <Avatar size="lg" name={user?.name || 'You'} style={{ border: '4px solid var(--accent-primary)' }} />
           </motion.div>
           <h2 className="serif">Searching.</h2>
         </div>
@@ -107,7 +138,7 @@ export default function QueuePage() {
         </div>
 
         <div className={styles.actions}>
-          <Button variant="ghost" className="mono" onClick={() => router.push('/dashboard')}>
+          <Button variant="ghost" className="mono" onClick={handleCancel}>
             CANCEL SEARCH
           </Button>
           <Button variant="outline" className="mono">

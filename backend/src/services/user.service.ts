@@ -111,3 +111,27 @@ export const getLeaderboard = async () => {
     },
   });
 };
+
+export const onboarding = async (userId: string, data: {
+  collegeId: string;
+  year?: string;
+  branch?: string;
+  interests: string[];
+  bio?: string;
+}) => {
+  const user = await prisma.user.update({
+    where: { id: userId },
+    data: {
+      collegeId: data.collegeId,
+      year: data.year,
+      branch: data.branch,
+      interests: JSON.stringify(data.interests),
+      bio: data.bio,
+    },
+  });
+
+  return {
+    ...user,
+    interests: user.interests ? JSON.parse(user.interests) : [],
+  };
+};

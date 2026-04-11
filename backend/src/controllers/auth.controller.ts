@@ -177,3 +177,14 @@ export const getMe = async (req: Request, res: Response) => {
     res.status(500).json({ error: 'Internal server error' });
   }
 };
+
+export const resendOtp = async (req: Request, res: Response) => {
+  try {
+    const { userId } = req.body;
+    if (!userId) return res.status(400).json({ error: 'UserId is required' });
+    await authService.resendOTP(userId);
+    res.json({ message: 'A new OTP has been sent to your email.' });
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
+};

@@ -15,6 +15,7 @@ import authRoutes from './routes/auth.routes';
 import profileRoutes from './routes/user.routes';
 import confessionRoutes from './routes/confession.routes';
 import moderationRoutes from './routes/moderation.routes';
+import chaosRoutes from './routes/chaos.routes';
 
 dotenv.config();
 
@@ -52,6 +53,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/users', profileRoutes);
 app.use('/api/confessions', confessionRoutes);
 app.use('/api/moderation', moderationRoutes);
+app.use('/api/chaos', chaosRoutes);
 
 // Initialize Services
 const initialize = async () => {

@@ -4,10 +4,17 @@ import React, { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/context/AuthContext';
+import { authApi, userApi } from '@/lib/api';
 import { Button } from '@/components/Button';
 import { Input } from '@/components/Input';
 import { Tag } from '@/components/Tag';
 import styles from './page.module.css';
+
+interface College {
+  id: string;
+  name: string;
+  domain: string;
+}
 
 const INTERESTS = [
   'Coding', 'Design', 'Hackathons', 'Gaming', 'Greek Life', 
@@ -20,13 +27,18 @@ const INTERESTS = [
 export default function OnboardingPage() {
   const [step, setStep] = useState(1);
   const router = useRouter();
-  const { user, updateUser } = useAuth();
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [error, setError] = useState('');
+  const [colleges, setColleges] = useState<College[]>([]);
+  const [collegeSearch, setCollegeSearch] = useState('');
+  const [isCollegesLoading, setIsCollegesLoading] = useState(true);
   
   // Form State
   const [formData, setFormData] = useState({
     year: user?.year || '',
     branch: user?.branch || '',
-    campus: '',
+    collegeId: user?.collegeId || '',
+    bio: user?.bio || '',
     interests: user?.interests || [] as string[],
     preferences: {
       videoEnabled: true,
@@ -34,6 +46,24 @@ export default function OnboardingPage() {
       matchLevel: 'vibes' // 'vibes' or 'random'
     }
   });
+
+  useEffect(() => {
+    const fetchColleges = async () => {
+      try {
+        const response = await authApi.getColleges();
+        setColleges(response.data);
+      } catch (err) {
+        console.error('Failed to fetch colleges', err);
+      } finally {
+        setIsCollegesLoading(false);
+      }
+    };
+    fetchColleges();
+  }, []);
+
+  const filteredColleges = colleges.filter(c => 
+    c.name.toLowerCase().includes(collegeSearch.toLowerCase())
+  );
 
   const toggleInterest = (interest: string) => {
     setFormData(prev => {
@@ -53,13 +83,31 @@ export default function OnboardingPage() {
     if (step > 1) setStep(step - 1);
   };
 
-  const handleComplete = () => {
-    updateUser({
-      year: formData.year,
-      branch: formData.branch,
-      interests: formData.interests
-    });
-    router.push('/dashboard');
+  const handleComplete = async () => {
+    if (!formData.collegeId) {
+      setError('Please select your college.');
+      setStep(1);
+      return;
+    }
+
+    setIsSubmitting(true);
+    setError('');
+
+    try {
+      const response = await userApi.onboarding({
+        collegeId: formData.collegeId,
+        year: formData.year,
+        branch: formData.branch,
+        interests: formData.interests,
+        bio: formData.bio || `Student at ${colleges.find(c => c.id === formData.collegeId)?.name}`
+      });
+      
+      updateUser(response.data);
+      router.push('/dashboard');
+    } catch (err: any) {
+      setError(err.response?.data?.error || 'Failed to complete onboarding.');
+      setIsSubmitting(false);
+    }
   };
 
   return (
@@ -117,11 +165,37 @@ export default function OnboardingPage() {
                   onChange={e => setFormData({...formData, branch: e.target.value})}
                   fullWidth
                 />
+                <div className={styles.collegeSelector}>
+                  <label className="mono" style={{ fontSize: '0.875rem', marginBottom: '0.5rem', display: 'block' }}>Search College</label>
+                  <Input 
+                    placeholder="Search your college..." 
+                    value={collegeSearch}
+                    onChange={e => setCollegeSearch(e.target.value)}
+                    fullWidth
+                  />
+                  <div className={styles.collegeList}>
+                    {isCollegesLoading ? (
+                      <p className="mono" style={{ fontSize: '0.8rem', padding: '1rem' }}>Loading colleges...</p>
+                    ) : (
+                      filteredColleges.map(college => (
+                        <div 
+                          key={college.id}
+                          className={`${styles.collegeItem} ${formData.collegeId === college.id ? styles.selected : ''}`}
+                          onClick={() => setFormData({ ...formData, collegeId: college.id })}
+                        >
+                          <span className="mono">{college.name}</span>
+                          <span className={styles.domain}>{college.domain}</span>
+                        </div>
+                      ))
+                    )}
+                  </div>
+                </div>
+
                 <Input 
-                  label="Campus / College" 
-                  placeholder="e.g. Stanford University" 
-                  value={formData.campus}
-                  onChange={e => setFormData({...formData, campus: e.target.value})}
+                  label="Bio (Optional)" 
+                  placeholder="A short punchy intro..." 
+                  value={formData.bio}
+                  onChange={e => setFormData({...formData, bio: e.target.value})}
                   fullWidth
                 />
               </>
@@ -208,7 +282,12 @@ export default function OnboardingPage() {
           <Button 
             variant="primary" 
             onClick={nextStep}
-            disabled={step === 2 && formData.interests.length < 3}
+            disabled={
+              (step === 1 && (!formData.collegeId || !formData.year || !formData.branch)) ||
+              (step === 2 && formData.interests.length < 3) ||
+              isSubmitting
+            }
+            loading={isSubmitting}
           >
             {step === 3 ? "Let's Go!" : "Continue"}
           </Button>
