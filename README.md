@@ -62,4 +62,4 @@ CuziCam is a real-time anonymous video and text chat platform designed exclusive
 *   **Role-Based Access**: Specialized views for students, moderators, and admins.
 
 ---
-Built with ❤️ for the student community.
+Built with ❤️ for the student community....
