@@ -1,9 +1,29 @@
 import type { Metadata } from "next";
+import { DM_Sans, Space_Mono, Instrument_Serif } from "next/font/google";
+import { Providers } from "./providers";
 import "./globals.css";
 
+const dmSans = DM_Sans({
+  subsets: ["latin"],
+  variable: "--font-dm-sans",
+});
+
+const spaceMono = Space_Mono({
+  subsets: ["latin"],
+  weight: ["400", "700"],
+  variable: "--font-space-mono",
+});
+
+const instrumentSerif = Instrument_Serif({
+  subsets: ["latin"],
+  weight: "400",
+  variable: "--font-instrument-serif",
+  style: ["normal", "italic"],
+});
+
 export const metadata: Metadata = {
-  title: "CuziCam | The Vibe Match for College Students",
-  description: "Real-time anonymous video and text chat platform exclusively for verified college students. Match by vibe, play mini-games, and make connections safely.",
+  title: "CuziCam | Find your people.",
+  description: "Exclusive real-time anonymous video and text chat platform for verified college students.",
 };
 
 export default function RootLayout({
@@ -12,13 +32,13 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
-      <head>
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
-      </head>
-      <body>{children}</body>
+    <html lang="en" className={`${dmSans.variable} ${spaceMono.variable} ${instrumentSerif.variable}`}>
+      <body>
+        {/* SVG Texture overlay */}
+        <div className="noise-overlay" />
+        <Providers>{children}</Providers>
+      </body>
     </html>
   );
 }
+

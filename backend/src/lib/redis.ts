@@ -1,12 +1,11 @@
-import { createClient } from 'redis';
+import Redis from 'ioredis-mock';
 
-const client = createClient({ url: process.env.REDIS_URL || 'redis://localhost:6379' });
-
-client.on('error', (err) => console.error('[Redis] Client Error', err));
-client.on('connect', () => console.log('[Redis] Connected'));
+// SWAP TO PRODUCTION: replace ioredis-mock with ioredis and set REDIS_URL in .env
+const redis = new Redis();
 
 export const connectRedis = async () => {
-  if (!client.isOpen) await client.connect();
+  // ioredis-mock connects immediately, but we keep this for compatibility
+  console.log('[Redis] Mock initialized (ioredis-mock)');
 };
 
-export { client as redis };
+export { redis };

@@ -1,0 +1,146 @@
+.layout {
+  display: flex;
+  min-height: 100vh;
+  background-color: var(--bg-primary);
+}
+
+.mainContainer {
+  flex: 1;
+  padding: 4rem 2rem;
+  overflow-y: auto;
+}
+
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.header {
+  margin-bottom: 4rem;
+  text-align: center;
+}
+
+.header h1 {
+  font-size: 3.5rem;
+  margin-bottom: 1rem;
+}
+
+.filters {
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+  margin-bottom: 3rem;
+  overflow-x: auto;
+  padding-bottom: 1rem;
+}
+
+.composer {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-light);
+  border-radius: var(--border-radius-lg);
+  padding: 2rem;
+  margin-bottom: 4rem;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.2);
+}
+
+.composer textarea {
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  font-family: var(--font-dm-sans), sans-serif;
+  font-size: 1.1rem;
+  resize: none;
+  outline: none;
+  margin-bottom: 1.5rem;
+  min-height: 100px;
+}
+
+.composerFooter {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.feed {
+  column-count: 3;
+  column-gap: 1.5rem;
+}
+
+.confessionCard {
+  break-inside: avoid;
+  margin-bottom: 1.5rem;
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-light);
+  border-radius: var(--border-radius);
+  padding: 1.5rem;
+  transition: var(--transition);
+}
+
+.confessionCard:hover {
+  transform: translateY(-5px);
+  border-color: var(--accent-primary);
+}
+
+.cardContent {
+  font-size: 1rem;
+  line-height: 1.6;
+  margin-bottom: 1.5rem;
+  color: var(--text-primary);
+}
+
+.cardFooter {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-top: 1px solid var(--border-dark);
+  padding-top: 1rem;
+}
+
+.voteGroup {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.voteBtn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  transition: var(--transition);
+  font-size: 0.8rem;
+}
+
+.voteBtn:hover {
+  background-color: var(--bg-surface-elevated);
+  color: var(--accent-primary);
+}
+
+.upvoted {
+  color: var(--accent-primary);
+}
+
+.timestamp {
+  font-family: var(--font-space-mono), monospace;
+  font-size: 0.7rem;
+  color: var(--text-muted);
+}
+
+@media (max-width: 1024px) {
+  .feed {
+    column-count: 2;
+  }
+}
+
+@media (max-width: 768px) {
+  .feed {
+    column-count: 1;
+  }
+  
+  .header h1 {
+    font-size: 2.5rem;
+  }
+}

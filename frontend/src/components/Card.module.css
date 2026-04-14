@@ -1,0 +1,23 @@
+.card {
+  background-color: var(--bg-surface);
+  border: 1px solid var(--border-light);
+  border-radius: var(--border-radius-lg);
+  color: var(--text-primary);
+  overflow: hidden;
+}
+
+.p-none {
+  padding: 0;
+}
+
+.p-sm {
+  padding: 1rem;
+}
+
+.p-md {
+  padding: 1.5rem;
+}
+
+.p-lg {
+  padding: 2rem;
+}

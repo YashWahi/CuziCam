@@ -1,53 +1,52 @@
-import { Response } from 'express';
+import { Request, Response } from 'express';
 import { prisma } from '../lib/prisma';
-import { AuthRequest } from '../middleware/auth.middleware';
 
-// Moderation Dashboard Controller
-// Provides insights into reported users and session metadata.
-
-export const getAllReports = async (req: AuthRequest, res: Response) => {
+export const getAllReports = async (req: Request, res: Response) => {
   try {
     const reports = await prisma.report.findMany({
+      orderBy: { createdAt: 'desc' },
       include: {
-        reporter: { select: { id: true, name: true, email: true } },
-        reported: { select: { id: true, name: true, email: true } },
-        session: { select: { id: true, startTime: true, messageCount: true } }
-      },
-      orderBy: { createdAt: 'desc' }
+        reporter: { select: { id: true, name: true } },
+        reported: { select: { id: true, name: true } },
+        session: true
+      }
     });
     res.json(reports);
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch reports' });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
 };
 
-export const banUser = async (req: AuthRequest, res: Response) => {
+export const banUser = async (req: Request, res: Response) => {
   try {
     const { userId } = req.body;
-    const user = await prisma.user.update({
+    if (!userId) return res.status(400).json({ error: 'UserId is required' });
+
+    await prisma.user.update({
       where: { id: userId },
       data: { isBanned: true }
     });
-    res.json({ message: `User ${user.name} banned successfully.` });
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to ban user' });
+
+    res.json({ message: `User ${userId} has been banned.` });
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
   }
 };
 
-export const getModerationStats = async (req: AuthRequest, res: Response) => {
+export const getModerationStats = async (req: Request, res: Response) => {
   try {
-    const [userCount, matchCount, reportCount] = await Promise.all([
+    const [totalUsers, totalReports, bannedUsers] = await Promise.all([
       prisma.user.count(),
-      prisma.matchSession.count(),
-      prisma.report.count({ where: { status: 'PENDING' } })
+      prisma.report.count(),
+      prisma.user.count({ where: { isBanned: true } })
     ]);
 
     res.json({
-      userCount,
-      matchCount,
-      pendingReports: reportCount
+      totalUsers,
+      totalReports,
+      bannedUsers
     });
-  } catch (error) {
-    res.status(500).json({ error: 'Failed to fetch stats' });
+  } catch (error: any) {
+    res.status(500).json({ error: error.message });
   }
 };
