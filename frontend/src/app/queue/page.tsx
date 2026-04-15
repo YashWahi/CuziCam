@@ -1,9 +1,11 @@
 'use client';
 
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { useSocket } from '@/context/SocketContext';
 import { useAuth } from '@/context/AuthContext';
+import { chaosApi } from '@/lib/api';
 import { Button } from '@/components/Button';
 import { Avatar } from '@/components/Avatar';
 import styles from './page.module.css';
@@ -14,7 +16,12 @@ export default function QueuePage() {
   const [onlineCount, setOnlineCount] = useState(1284);
   const [inQueue, setInQueue] = useState(42);
   const [status, setStatus] = useState('Finding your vibe...');
+  const [chaosActive, setChaosActive] = useState(false);
   const router = useRouter();
+
+  useEffect(() => {
+    chaosApi.getStatus().then(res => setChaosActive(res.data.isActive)).catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (!socket || !isConnected) return;
@@ -63,6 +70,11 @@ export default function QueuePage() {
 
   return (
     <div className={styles.queueContainer}>
+      {chaosActive && (
+        <div style={{ position: 'absolute', top: 0, width: '100%', background: 'red', color: 'white', textAlign: 'center', padding: '0.5rem', zIndex: 10 }}>
+          CHAOS WINDOW IS ACTIVE
+        </div>
+      )}
       <div className={styles.backgroundEffects}>
         {/* Subtle background motion can go here */}
       </div>

@@ -110,7 +110,7 @@ export default function DashboardPage() {
           <section>
             <div className={styles.sectionTitle}>
               <span className="serif">Recent Stars</span>
-              <Badge label="Connect" count={MOCK_CONNECTIONS.length} />
+              <Badge label="Connect" count={connections.length} />
             </div>
             
             <div className={styles.connectionGrid}>

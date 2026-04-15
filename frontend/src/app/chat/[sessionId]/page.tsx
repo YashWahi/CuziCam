@@ -1,8 +1,10 @@
 'use client';
 
+import React, { useState, useEffect, useRef } from 'react';
 import { useSearchParams, useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { useSocket } from '@/context/SocketContext';
+import { motion, AnimatePresence } from 'framer-motion';
 import VideoPlayer from '@/components/VideoPlayer';
 import { Button } from '@/components/Button';
 import { Badge } from '@/components/Badge';

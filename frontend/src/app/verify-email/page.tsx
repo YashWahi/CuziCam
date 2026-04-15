@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, Suspense } from 'react';
+import React, { useState, useEffect, Suspense, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { authApi } from '@/lib/api';
@@ -14,7 +14,8 @@ function VerifyEmailContent() {
   const userId = searchParams.get('userId');
   const email = searchParams.get('email');
 
-  const [otp, setOtp] = useState('');
+  const [otpArray, setOtpArray] = useState(['', '', '', '', '', '']);
+  const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
@@ -35,9 +36,31 @@ function VerifyEmailContent() {
     return () => clearInterval(timer);
   }, [cooldown]);
 
+  const handleChange = (index: number, value: string) => {
+    // Only accept numeric values
+    if (value && !/^\d+$/.test(value)) return;
+
+    const newOtp = [...otpArray];
+    newOtp[index] = value;
+    setOtpArray(newOtp);
+
+    // Auto-advance to next input
+    if (value && index < 5 && inputRefs.current[index + 1]) {
+      inputRefs.current[index + 1]?.focus();
+    }
+  };
+
+  const handleKeyDown = (index: number, e: React.KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === 'Backspace' && !otpArray[index] && index > 0) {
+      // Focus previous input on backspace
+      inputRefs.current[index - 1]?.focus();
+    }
+  };
+
   const handleVerify = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (otp.length !== 6) {
+    const otpCode = otpArray.join('');
+    if (otpCode.length !== 6) {
       setError('Please enter a valid 6-digit code.');
       return;
     }
@@ -46,11 +69,9 @@ function VerifyEmailContent() {
     setError('');
     
     try {
-      await authApi.verifyOTP({ userId: userId!, otp });
+      await authApi.verifyOTP({ userId: userId!, otp: otpCode });
       setSuccess('Email verified successfully! Redirecting...');
       
-      // Post-verification flow: check if user needs onboarding
-      // For now, we redirect to onboarding as per current flow
       setTimeout(() => {
         router.push('/onboarding');
       }, 2000);
@@ -67,7 +88,7 @@ function VerifyEmailContent() {
     setResending(true);
     setError('');
     try {
-      await authApi.resendOtp(userId!);
+      await authApi.resendOtp({ userId: userId! });
       setSuccess('A new code has been sent to your email.');
       setCooldown(60);
     } catch (err: any) {
@@ -94,23 +115,38 @@ function VerifyEmailContent() {
         {success && <div className={styles.successBanner}>{success}</div>}
 
         <form onSubmit={handleVerify} className={styles.form}>
-          <Input 
-            label="Verification Code"
-            placeholder="000000"
-            value={otp}
-            onChange={(e) => setOtp(e.target.value.replace(/\D/g, '').slice(0, 6))}
-            maxLength={6}
-            disabled={loading}
-            fullWidth
-            style={{ textAlign: 'center', letterSpacing: '0.5rem', fontSize: '1.5rem' }}
-          />
+          <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'center', marginBottom: '1.5rem' }}>
+            {otpArray.map((digit, idx) => (
+              <input
+                key={idx}
+                ref={el => { inputRefs.current[idx] = el; }}
+                type="text"
+                maxLength={1}
+                value={digit}
+                onChange={(e) => handleChange(idx, e.target.value)}
+                onKeyDown={(e) => handleKeyDown(idx, e)}
+                disabled={loading}
+                style={{
+                  width: '3rem',
+                  height: '3.5rem',
+                  textAlign: 'center',
+                  fontSize: '1.5rem',
+                  fontWeight: 'bold',
+                  borderRadius: 'var(--border-radius)',
+                  border: '1px solid var(--border-light)',
+                  backgroundColor: 'var(--bg-primary)',
+                  color: 'var(--text-primary)'
+                }}
+              />
+            ))}
+          </div>
 
           <Button 
             type="submit" 
             variant="primary" 
             fullWidth 
             loading={loading}
-            disabled={otp.length !== 6 || loading}
+            disabled={otpArray.join('').length !== 6 || loading}
           >
             Verify Account
           </Button>

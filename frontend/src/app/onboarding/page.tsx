@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/context/AuthContext';
@@ -25,6 +25,7 @@ const INTERESTS = [
 ];
 
 export default function OnboardingPage() {
+  const { user, updateUser } = useAuth();
   const [step, setStep] = useState(1);
   const router = useRouter();
   const [isSubmitting, setIsSubmitting] = useState(false);
