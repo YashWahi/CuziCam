@@ -12,7 +12,7 @@ type User = {
   isEmailVerified: boolean;
   vibeScore: number;
   college: { id: string; name: string; domain: string };
-  interests: string;
+  interests: string | string[];
   year?: string;
   branch?: string;
   bio?: string;
@@ -53,7 +53,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       try {
         const userData = await authApi.getCurrentUser();
         // Set user to userData or its inner user object based on API response structure
-        setUser(userData?.user || userData);
+        setUser((userData as any)?.user || userData);
         setIsLoggedIn(true);
       } catch (error) {
         setIsLoggedIn(false);
@@ -74,7 +74,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     }
     try {
       const userData = await authApi.getCurrentUser();
-      setUser(userData?.user || userData);
+      setUser((userData as any)?.user || userData);
       setIsLoggedIn(true);
     } catch (error) {
       console.error("Failed to fetch user during login", error);

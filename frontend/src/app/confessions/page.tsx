@@ -3,11 +3,10 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/context/AuthContext';
-import { confessionApi } from '@/lib/api';
+import { confessionsApi } from '@/lib/api';
 import { Sidebar } from '@/components/Sidebar';
 import { Button } from '@/components/Button';
 import { Tag } from '@/components/Tag';
-import { Card } from '@/components/Card';
 import styles from './page.module.css';
 
 interface Confession {
@@ -19,6 +18,20 @@ interface Confession {
   createdAt: string;
 }
 
+const SkeletonCard = () => (
+  <div className={styles.skeletonCard}>
+    <div className={styles.skeletonContent}>
+      <div className={styles.skeletonLine} style={{ width: '80%' }} />
+      <div className={styles.skeletonLine} style={{ width: '95%' }} />
+      <div className={styles.skeletonLine} style={{ width: '60%' }} />
+    </div>
+    <div className={styles.skeletonFooter}>
+      <div className={styles.skeletonButton} />
+      <div className={styles.skeletonButton} style={{ width: '40px' }} />
+    </div>
+  </div>
+);
+
 export default function ConfessionsPage() {
   const { user } = useAuth();
   const [activeCategory, setActiveCategory] = useState('Trending');
@@ -27,21 +40,21 @@ export default function ConfessionsPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
   const [isPosting, setIsPosting] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
 
   useEffect(() => {
     fetchConfessions();
   }, [activeCategory, user]);
 
   const fetchConfessions = async () => {
-    if (!user?.collegeId) return;
+    if (!user?.college?.id) return;
     
     setIsLoading(true);
     try {
-      const response = await confessionApi.getAll(
-        user.collegeId, 
-        activeCategory === 'Trending' ? 'trending' : 'new'
-      );
-      setConfessions(response.data);
+      const response = await confessionsApi.getAll({ 
+        sort: activeCategory === 'Trending' ? 'trending' : 'new' 
+      });
+      setConfessions((response as any).data || response);
     } catch (err) {
       console.error('Failed to fetch confessions', err);
       setError('Failed to load confessions. Try again later.');
@@ -50,20 +63,23 @@ export default function ConfessionsPage() {
     }
   };
 
+  const showToast = (message: string) => {
+    setToast(message);
+    setTimeout(() => setToast(null), 3000);
+  };
+
   const handlePost = async () => {
-    if (!newConfession.trim() || !user?.collegeId) return;
+    if (!newConfession.trim() || !user?.college?.id) return;
     
     setIsPosting(true);
     setError('');
     try {
-      const response = await confessionApi.create({
+      const response = await confessionsApi.create({
         content: newConfession,
-        category: activeCategory !== 'Trending' ? activeCategory : 'General',
-        collegeId: user.collegeId
       });
       
-      // Optimistically add or just re-fetch
-      setConfessions([response.data, ...confessions]);
+      const newConf = (response as any).data || response;
+      setConfessions([newConf, ...confessions]);
       setNewConfession('');
     } catch (err: any) {
       setError(err.response?.data?.error || 'Failed to post confession.');
@@ -74,13 +90,13 @@ export default function ConfessionsPage() {
 
   const handleUpvote = async (id: string) => {
     try {
-      await confessionApi.vote(id);
+      await confessionsApi.like(id);
       setConfessions(prev => prev.map(c => 
         c.id === id ? { ...c, upvotes: c.upvotes + 1 } : c
       ));
     } catch (err: any) {
       if (err.response?.status === 403) {
-        alert('You have already upvoted this confession today.');
+        showToast("You've already upvoted this 🔥");
       } else {
         console.error('Failed to upvote', err);
       }
@@ -97,10 +113,6 @@ export default function ConfessionsPage() {
     if (diff < 86400) return `${Math.floor(diff / 3600)}h ago`;
     return date.toLocaleDateString();
   };
-
-  const filteredConfessions = activeCategory === 'All' 
-    ? confessions 
-    : confessions.filter(c => c.category === activeCategory);
 
   return (
     <div className={styles.layout}>
@@ -128,11 +140,13 @@ export default function ConfessionsPage() {
             />
             <div className={styles.composerFooter}>
               <div style={{ display: 'flex', gap: '0.5rem' }}>
-                <Tag label="Anonymous" variant="outline" />
-                <Tag label={activeCategory !== 'All' ? activeCategory : 'General'} variant="secondary" />
+                <Tag variant="outline">Anonymous</Tag>
+                <Tag variant="secondary">
+                  {activeCategory !== 'Trending' && activeCategory !== 'New' ? activeCategory : 'General'}
+                </Tag>
               </div>
-              <Button onClick={handlePost} disabled={!newConfession.trim()}>
-                Post Confession
+              <Button onClick={handlePost} disabled={!newConfession.trim() || isPosting}>
+                {isPosting ? 'Posting...' : 'Post Confession'}
               </Button>
             </div>
           </div>
@@ -141,10 +155,12 @@ export default function ConfessionsPage() {
             {['Trending', 'New', 'Love', 'Rant', 'Academic', 'Wholesome'].map(cat => (
               <div key={cat} onClick={() => setActiveCategory(cat)} style={{ cursor: 'pointer' }}>
                 <Tag 
-                  label={cat} 
-                  variant={activeCategory === cat ? 'primary' : 'outline'} 
+                  active={activeCategory === cat}
+                  interactive
                   style={{ padding: '0.75rem 1.5rem', borderRadius: '20px' }}
-                />
+                >
+                  {cat}
+                </Tag>
               </div>
             ))}
           </div>
@@ -152,11 +168,9 @@ export default function ConfessionsPage() {
           {error && <div className={styles.errorBanner}>{error}</div>}
 
           <div className={styles.feed}>
-            <AnimatePresence>
+            <AnimatePresence mode="popLayout">
               {isLoading ? (
-                <div className={styles.emptyState}>
-                  <p className="mono">Tuning into campus vibrations...</p>
-                </div>
+                [...Array(3)].map((_, i) => <SkeletonCard key={`skeleton-${i}`} />)
               ) : confessions.length > 0 ? (
                 confessions.map((c, index) => (
                   <motion.div
@@ -164,7 +178,8 @@ export default function ConfessionsPage() {
                     className={styles.confessionCard}
                     initial={{ opacity: 0, y: 20 }}
                     animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: Math.min(index * 0.05, 1) }}
+                    exit={{ opacity: 0, scale: 0.95 }}
+                    transition={{ delay: Math.min(index * 0.05, 0.5) }}
                     layout
                   >
                     <div className={styles.cardContent}>
@@ -179,7 +194,7 @@ export default function ConfessionsPage() {
                           🔥 {c.upvotes}
                         </button>
                         <span className="mono" style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>
-                          {user?.college?.name}
+                          {user?.college?.name || 'Campus'}
                         </span>
                       </div>
                       <span className={styles.timestamp}>{formatTimestamp(c.createdAt)}</span>
@@ -195,6 +210,19 @@ export default function ConfessionsPage() {
           </div>
         </div>
       </main>
+
+      <AnimatePresence>
+        {toast && (
+          <motion.div 
+            className={styles.toast}
+            initial={{ opacity: 0, y: 20, x: 0 }}
+            animate={{ opacity: 1, y: 0, x: 0 }}
+            exit={{ opacity: 0, scale: 0.95, transition: { duration: 0.2 } }}
+          >
+            <p className="mono" style={{ margin: 0, fontSize: '0.875rem' }}>{toast}</p>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

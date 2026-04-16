@@ -9,6 +9,8 @@ import VideoPlayer from '@/components/VideoPlayer';
 import { Button } from '@/components/Button';
 import { Badge } from '@/components/Badge';
 import { Tag } from '@/components/Tag';
+import { Modal } from '@/components/Modal';
+import { moderationApi } from '@/lib/api';
 import styles from '../page.module.css';
 
 const ICE_SERVERS = {
@@ -18,14 +20,30 @@ const ICE_SERVERS = {
   ],
 };
 
+const REPORT_REASONS = [
+  "Inappropriate behavior",
+  "Harassment",
+  "Spam",
+  "Explicit content",
+  "Other"
+];
+
 export default function ChatSessionPage() {
-  const { sessionId } = useParams();
+  const params = useParams();
+  const sessionId = params.sessionId as string;
   const searchParams = useSearchParams();
   const role = searchParams.get('role');
   const router = useRouter();
   const { user } = useAuth();
   const { socket, isConnected } = useSocket();
   
+  // Redirect if sessionId is missing or undefined
+  useEffect(() => {
+    if (!sessionId) {
+      router.push('/dashboard');
+    }
+  }, [sessionId, router]);
+
   const [status, setStatus] = useState<string>('Initializing...');
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
@@ -34,6 +52,26 @@ export default function ChatSessionPage() {
   const [messages, setMessages] = useState<{text: string, isSelf: boolean, id: number}[]>([]);
   const [chatInput, setChatInput] = useState('');
   const [isStarred, setIsStarred] = useState(false);
+
+  // Modal States
+  const [isMediaErrorModalOpen, setIsMediaErrorModalOpen] = useState(false);
+  const [isBlockedModalOpen, setIsBlockedModalOpen] = useState(false);
+  const [isReportModalOpen, setIsReportModalOpen] = useState(false);
+  const [reportReason, setReportReason] = useState(REPORT_REASONS[0]);
+  const [isReporting, setIsReporting] = useState(false);
+
+  // Partner Info
+  const [partnerName, setPartnerName] = useState('Match');
+  const [partnerCollege, setPartnerCollege] = useState('Verified Student');
+
+  useEffect(() => {
+    if (typeof window !== 'undefined') {
+      const storedName = sessionStorage.getItem('partnerName');
+      const storedCollege = sessionStorage.getItem('partnerCollege');
+      if (storedName) setPartnerName(storedName);
+      if (storedCollege) setPartnerCollege(storedCollege);
+    }
+  }, []);
   
   const peerConnection = useRef<RTCPeerConnection | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -45,30 +83,36 @@ export default function ChatSessionPage() {
     }
   }, [messages]);
 
+  const initMedia = async () => {
+    try {
+      setIsMediaErrorModalOpen(false);
+      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      setLocalStream(stream);
+      setStatus('Ready');
+    } catch (err) {
+      console.error(err);
+      setIsMediaErrorModalOpen(true);
+      setStatus('Camera access denied');
+    }
+  };
+
   // Get Media & Initialize
   useEffect(() => {
-    let stream: MediaStream | null = null;
-    
-    const initMedia = async () => {
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-        setLocalStream(stream);
-        setStatus('Ready');
-      } catch (err) {
-        console.error(err);
-        setStatus('Camera access required to chat.');
-      }
-    };
-
     initMedia();
 
     return () => {
-      stream?.getTracks().forEach(t => t.stop());
       if (peerConnection.current) {
         peerConnection.current.close();
       }
     };
   }, []);
+
+  // Ensure localStream cleanup when it changes or unmounts
+  useEffect(() => {
+    return () => {
+      localStream?.getTracks().forEach(t => t.stop());
+    };
+  }, [localStream]);
 
   // WebRTC Signaling Logic
   useEffect(() => {
@@ -105,13 +149,14 @@ export default function ChatSessionPage() {
     });
 
     socket.on('signal:ice', async (data) => {
-      if (data.candidate) {
+      if (data && data.candidate) {
         try {
           await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
         } catch (e) {
           console.error('[WebRTC] Error adding ICE candidate', e);
         }
       }
+      // Silently handle missing candidate (as requested)
     });
 
     // Chat listeners
@@ -119,14 +164,18 @@ export default function ChatSessionPage() {
       setMessages(prev => [...prev, { text: data.text, isSelf: false, id: Date.now() }]);
     });
 
-    socket.on('chat:blocked', (data) => {
-      alert(`Message blocked: ${data.reason}`);
+    socket.on('chat:blocked', () => {
+      setIsBlockedModalOpen(true);
     });
 
-    // Match metadata (redundant but good for safety)
+    // Match metadata
     socket.on('match:found', (data) => {
        setVibeData({ icebreaker: data.icebreaker, sharedInterests: data.sharedInterests });
        setTimeout(() => setVibeData(null), 8000);
+       
+       // Update partner info if provided in the event (as backup to sessionStorage)
+       if (data.partnerName) setPartnerName(data.partnerName);
+       if (data.partnerCollege) setPartnerCollege(data.partnerCollege);
     });
 
     socket.on('star:sent', () => {
@@ -136,7 +185,6 @@ export default function ChatSessionPage() {
 
     socket.on('star:mutual', () => {
       setStatus('MUTUAL STAR! 💖');
-      // Potential celebration effect here
     });
 
     socket.on('session:partner-disconnected', () => {
@@ -146,7 +194,6 @@ export default function ChatSessionPage() {
 
     socket.on('session:summary', (summary) => {
        console.log('Session Summary:', summary);
-       // Could redirect to a summary page if needed
     });
 
     // If I'm the caller, initiate the offer immediately
@@ -192,19 +239,43 @@ export default function ChatSessionPage() {
     setIsStarred(true);
   };
 
+  const handleReport = async () => {
+    if (!sessionId || isReporting) return;
+    setIsReporting(true);
+    try {
+      const reportedId = sessionStorage.getItem('partnerId');
+      await moderationApi.report({ 
+        reportedId,
+        sessionId, 
+        reason: reportReason 
+      });
+      setIsReportModalOpen(false);
+      // Optionally show a success toast here
+    } catch (err) {
+      console.error('Report failed:', err);
+    } finally {
+      setIsReporting(false);
+    }
+  };
+
+  if (!sessionId) return null;
+
   return (
     <div className={styles.chatContainer}>
       {/* Video Main Area */}
       <div className={styles.videoSection}>
         <div className={styles.matchHeader}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-            <Badge label={status} variant={status === 'Connected' ? 'primary' : 'outline'} />
+            <Badge variant={status === 'Connected' ? 'primary' : 'neutral'}>{status}</Badge>
             <span className="mono" style={{ fontSize: '0.75rem', color: 'rgba(255,255,255,0.6)' }}>
-              SESSION_ID: {sessionId || 'MOCK'}
+              SESSION_ID: {sessionId.slice(0, 8)}...
             </span>
           </div>
           <div style={{ display: 'flex', gap: '0.5rem' }}>
-             <Tag label="Verified Student" variant="secondary" />
+             <Tag>{partnerCollege}</Tag>
+             <Button variant="ghost" size="sm" onClick={() => setIsReportModalOpen(true)} style={{ color: 'var(--accent-red)', borderColor: 'rgba(255,70,70,0.3)' }}>
+               🚩 Report
+             </Button>
           </div>
         </div>
 
@@ -212,7 +283,7 @@ export default function ChatSessionPage() {
           <VideoPlayer 
             stream={remoteStream} 
             isRevealed={isRevealed} 
-            username="Match"
+            username={partnerName}
           />
         </div>
 
@@ -221,7 +292,7 @@ export default function ChatSessionPage() {
             stream={localStream} 
             isLocal 
             isRevealed 
-            username={user?.name}
+            username={user?.name || 'You'}
           />
         </div>
 
@@ -230,12 +301,12 @@ export default function ChatSessionPage() {
             ⏭ SKIP
           </Button>
           {!isRevealed && status === 'Connected' && (
-            <Button variant="outline" onClick={() => setIsRevealed(true)}>
+            <Button variant="ghost" onClick={() => setIsRevealed(true)}>
               🎭 REVEAL
             </Button>
           )}
-          <Button variant="primary" onClick={handleStar} disabled={status !== 'Connected'}>
-            ⭐ STAR
+          <Button variant="primary" onClick={handleStar} disabled={status !== 'Connected' || isStarred}>
+            {isStarred ? '⭐ STARRED' : '⭐ STAR'}
           </Button>
         </div>
 
@@ -298,6 +369,85 @@ export default function ChatSessionPage() {
           </Button>
         </form>
       </div>
+
+      {/* Modals */}
+      
+      {/* Media Error Modal */}
+      <Modal 
+        isOpen={isMediaErrorModalOpen} 
+        title="Camera Access Required" 
+        hideCloseButton
+      >
+        <div style={{ textAlign: 'center' }}>
+          <p style={{ marginBottom: '2rem', lineHeight: '1.6' }}>
+            Camera access denied. Please allow camera and microphone permissions in your browser settings.
+          </p>
+          <Button variant="primary" onClick={initMedia}>
+            Try Again
+          </Button>
+        </div>
+      </Modal>
+
+      {/* Blocked Modal */}
+      <Modal 
+        isOpen={isBlockedModalOpen} 
+        title="Session Ended" 
+        hideCloseButton
+      >
+        <div style={{ textAlign: 'center' }}>
+          <p style={{ marginBottom: '2rem', lineHeight: '1.6' }}>
+            This user has been flagged. The session has ended.
+          </p>
+          <Button variant="primary" onClick={() => router.push('/queue')}>
+            Find New Match
+          </Button>
+        </div>
+      </Modal>
+
+      {/* Report Modal */}
+      <Modal 
+        isOpen={isReportModalOpen} 
+        onClose={() => setIsReportModalOpen(false)} 
+        title="Report User"
+      >
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+          <p className="mono" style={{ fontSize: '0.8rem', color: 'var(--text-muted)' }}>
+            Select a reason for reporting this user.
+          </p>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+            {REPORT_REASONS.map(reason => (
+              <label key={reason} style={{ 
+                display: 'flex', 
+                alignItems: 'center', 
+                gap: '1rem', 
+                padding: '1rem', 
+                backgroundColor: 'rgba(255,255,255,0.03)', 
+                borderRadius: '8px',
+                cursor: 'pointer',
+                border: reportReason === reason ? '1px solid var(--accent-primary)' : '1px solid transparent'
+              }}>
+                <input 
+                  type="radio" 
+                  name="reportReason" 
+                  value={reason} 
+                  checked={reportReason === reason}
+                  onChange={(e) => setReportReason(e.target.value)}
+                />
+                {reason}
+              </label>
+            ))}
+          </div>
+          <div style={{ display: 'flex', gap: '1rem', marginTop: '1rem' }}>
+            <Button variant="ghost" style={{ flex: 1 }} onClick={() => setIsReportModalOpen(false)}>
+              Cancel
+            </Button>
+            <Button variant="danger" style={{ flex: 1 }} onClick={handleReport} disabled={isReporting}>
+              {isReporting ? 'Reporting...' : 'Confirm Report'}
+            </Button>
+          </div>
+        </div>
+      </Modal>
+
     </div>
   );
 }

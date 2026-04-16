@@ -30,3 +30,27 @@
 .active.interactive:hover {
   background-color: rgba(184, 255, 87, 0.2);
 }
+
+.primary {
+  background-color: var(--accent-primary);
+  border-color: var(--accent-primary);
+  color: var(--bg-primary);
+}
+
+.secondary {
+  background-color: var(--bg-surface-elevated);
+  border-color: var(--border-light);
+  color: var(--text-primary);
+}
+
+.outline {
+  background-color: transparent;
+  border-color: var(--border-light);
+  color: var(--text-muted);
+}
+
+.ghost {
+  background-color: transparent;
+  border-color: transparent;
+  color: var(--text-muted);
+}
