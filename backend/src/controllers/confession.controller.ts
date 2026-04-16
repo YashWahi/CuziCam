@@ -12,6 +12,8 @@ export const getConfessionsByCollege = async (req: AuthRequest, res: Response) =
     const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user) return res.status(404).json({ error: 'User not found' });
 
+    if (!user.collegeId) return res.status(403).json({ error: 'Please set your college first.' });
+
     let confessions = await prisma.confession.findMany({
       where: { collegeId: user.collegeId, isVisible: true },
       orderBy: { createdAt: 'desc' },

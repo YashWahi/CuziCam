@@ -11,7 +11,6 @@ router.post('/verify-otp', authController.verifyEmail);
 router.post('/resend-otp', authController.resendOtp);
 router.post('/forgot-password', authController.forgotPassword);
 router.post('/google', authController.googleAuth);
-router.get('/colleges', authController.getColleges);
 router.get('/me', authenticate, authController.getMe);
 
 export default router;

@@ -16,6 +16,7 @@ import profileRoutes from './routes/user.routes';
 import confessionRoutes from './routes/confession.routes';
 import moderationRoutes from './routes/moderation.routes';
 import chaosRoutes from './routes/chaos.routes';
+import * as authController from './controllers/auth.controller';
 
 dotenv.config();
 
@@ -49,11 +50,16 @@ app.get('/health', (req, res) => {
   });
 });
 
-app.use('/api/auth', authRoutes);
-app.use('/api/users', profileRoutes);
-app.use('/api/confessions', confessionRoutes);
-app.use('/api/moderation', moderationRoutes);
-app.use('/api/chaos', chaosRoutes);
+// API Routes with v1 prefix
+const apiV1 = express.Router();
+apiV1.use('/auth', authRoutes);
+apiV1.get('/colleges', authController.getColleges);
+apiV1.use('/users', profileRoutes);
+apiV1.use('/confessions', confessionRoutes);
+apiV1.use('/moderation', moderationRoutes);
+apiV1.use('/chaos', chaosRoutes);
+
+app.use('/api/v1', apiV1);
 
 // Initialize Services
 const initialize = async () => {

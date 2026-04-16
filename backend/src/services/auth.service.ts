@@ -65,7 +65,10 @@ export const verifyOTP = async (userId: string, otp: string) => {
 
   await prisma.user.update({
     where: { id: userId },
-    data: { isEmailVerified: true },
+    data: { 
+      isEmailVerified: true,
+      isVerified: true 
+    },
   });
 
   await redis.del(`otp:${userId}`);

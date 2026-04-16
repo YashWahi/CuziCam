@@ -92,7 +92,7 @@ export const getConnections = async (userId: string) => {
       userId: otherUser.id,
       name: otherUser.name,
       avatarUrl: otherUser.avatarUrl,
-      college: otherUser.college.name,
+      college: otherUser.college?.name || 'Unknown',
       connectedAt: conn.createdAt,
     };
   });
