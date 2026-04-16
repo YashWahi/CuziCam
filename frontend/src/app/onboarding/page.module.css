@@ -160,3 +160,34 @@
     font-size: 2rem;
   }
 }
+
+.errorBanner {
+  background-color: rgba(255, 68, 68, 0.1);
+  border: 1px solid var(--error);
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 2rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+
+.errorBanner p {
+  color: var(--error);
+  font-size: 0.875rem;
+  margin: 0;
+}
+
+.retryArea {
+  padding: 1.5rem;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.75rem;
+}
+
+.retryArea p {
+  margin-bottom: 0.5rem;
+}

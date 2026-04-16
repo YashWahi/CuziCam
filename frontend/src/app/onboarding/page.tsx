@@ -1,10 +1,10 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/context/AuthContext';
-import { authApi, userApi } from '@/lib/api';
+import { userApi } from '@/lib/api';
 import { Button } from '@/components/Button';
 import { Input } from '@/components/Input';
 import { Tag } from '@/components/Tag';
@@ -25,22 +25,23 @@ const INTERESTS = [
 ];
 
 export default function OnboardingPage() {
-  const { user, updateUser } = useAuth();
+  const { user, updateUser } = useAuth() as any; // Cast as any to avoid type check issues if interface hasn't propagated
   const [step, setStep] = useState(1);
   const router = useRouter();
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [error, setError] = useState('');
+  const [submitError, setSubmitError] = useState(false);
   const [colleges, setColleges] = useState<College[]>([]);
   const [collegeSearch, setCollegeSearch] = useState('');
   const [isCollegesLoading, setIsCollegesLoading] = useState(true);
+  const [collegesError, setCollegesError] = useState(false);
   
   // Form State
   const [formData, setFormData] = useState({
     year: user?.year || '',
     branch: user?.branch || '',
-    collegeId: user?.collegeId || '',
+    collegeId: (user?.college as any)?.id || '',
     bio: user?.bio || '',
-    interests: user?.interests || [] as string[],
+    interests: Array.isArray(user?.interests) ? (user.interests as string[]) : [] as string[],
     preferences: {
       videoEnabled: true,
       textEnabled: true,
@@ -48,19 +49,23 @@ export default function OnboardingPage() {
     }
   });
 
-  useEffect(() => {
-    const fetchColleges = async () => {
-      try {
-        const response = await authApi.getColleges();
-        setColleges(response.data);
-      } catch (err) {
-        console.error('Failed to fetch colleges', err);
-      } finally {
-        setIsCollegesLoading(false);
-      }
-    };
-    fetchColleges();
+  const fetchColleges = useCallback(async () => {
+    setIsCollegesLoading(true);
+    setCollegesError(false);
+    try {
+      const response = await userApi.getColleges() as any;
+      setColleges(response.data || response);
+    } catch (err) {
+      console.error('Failed to fetch colleges', err);
+      setCollegesError(true);
+    } finally {
+      setIsCollegesLoading(false);
+    }
   }, []);
+
+  useEffect(() => {
+    fetchColleges();
+  }, [fetchColleges]);
 
   const filteredColleges = colleges.filter(c => 
     c.name.toLowerCase().includes(collegeSearch.toLowerCase())
@@ -68,14 +73,21 @@ export default function OnboardingPage() {
 
   const toggleInterest = (interest: string) => {
     setFormData(prev => {
-      const interests = prev.interests.includes(interest)
-        ? prev.interests.filter(i => i !== interest)
-        : [...prev.interests, interest];
+      const interests = (prev.interests as string[]).includes(interest)
+        ? (prev.interests as string[]).filter(i => i !== interest)
+        : [...(prev.interests as string[]), interest];
       return { ...prev, interests };
     });
   };
 
   const nextStep = () => {
+    // Basic validation check before moving
+    if (step === 1) {
+      if (!formData.collegeId || !formData.year) return;
+    } else if (step === 2) {
+      if (formData.interests.length < 3) return;
+    }
+
     if (step < 3) setStep(step + 1);
     else handleComplete();
   };
@@ -85,30 +97,37 @@ export default function OnboardingPage() {
   };
 
   const handleComplete = async () => {
-    if (!formData.collegeId) {
-      setError('Please select your college.');
+    if (!formData.collegeId || !formData.year) {
       setStep(1);
       return;
     }
 
     setIsSubmitting(true);
-    setError('');
+    setSubmitError(false);
 
     try {
-      const response = await userApi.onboarding({
+      const response = await userApi.completeOnboarding({
         collegeId: formData.collegeId,
         year: formData.year,
         branch: formData.branch,
         interests: formData.interests,
-        bio: formData.bio || `Student at ${colleges.find(c => c.id === formData.collegeId)?.name}`
-      });
+        bio: formData.bio,
+        preferences: formData.preferences
+      }) as any;
       
-      updateUser(response.data);
+      updateUser(response.data || response.user || response);
       router.push('/dashboard');
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to complete onboarding.');
+      console.error('Onboarding submission failed', err);
+      setSubmitError(true);
       setIsSubmitting(false);
     }
+  };
+
+  const isNextDisabled = () => {
+    if (step === 1) return !formData.collegeId || !formData.year;
+    if (step === 2) return formData.interests.length < 3;
+    return isSubmitting;
   };
 
   return (
@@ -141,6 +160,13 @@ export default function OnboardingPage() {
           </p>
         </div>
 
+        {submitError && (
+          <div className={styles.errorBanner}>
+            <p className="mono">Something went wrong. Please try again.</p>
+            <Button size="sm" onClick={() => handleComplete()} loading={isSubmitting}>Retry</Button>
+          </div>
+        )}
+
         <AnimatePresence mode="wait">
           <motion.div
             key={step}
@@ -153,21 +179,23 @@ export default function OnboardingPage() {
             {step === 1 && (
               <>
                 <Input 
-                  label="Graduation Year" 
+                  label="Graduation Year *" 
                   placeholder="e.g. 2027" 
                   value={formData.year}
                   onChange={e => setFormData({...formData, year: e.target.value})}
                   fullWidth
                 />
                 <Input 
-                  label="Major / Branch" 
+                  label="Major / Branch (Optional)" 
                   placeholder="e.g. Computer Science" 
                   value={formData.branch}
                   onChange={e => setFormData({...formData, branch: e.target.value})}
                   fullWidth
                 />
                 <div className={styles.collegeSelector}>
-                  <label className="mono" style={{ fontSize: '0.875rem', marginBottom: '0.5rem', display: 'block' }}>Search College</label>
+                  <label className="mono" style={{ fontSize: '0.875rem', marginBottom: '0.5rem', display: 'block' }}>
+                    Select College *
+                  </label>
                   <Input 
                     placeholder="Search your college..." 
                     value={collegeSearch}
@@ -177,7 +205,14 @@ export default function OnboardingPage() {
                   <div className={styles.collegeList}>
                     {isCollegesLoading ? (
                       <p className="mono" style={{ fontSize: '0.8rem', padding: '1rem' }}>Loading colleges...</p>
-                    ) : (
+                    ) : collegesError ? (
+                      <div className={styles.retryArea}>
+                        <p className="mono" style={{ fontSize: '0.8rem', color: 'var(--error)' }}>
+                          Couldn't load colleges. Please check your connection.
+                        </p>
+                        <Button size="sm" variant="ghost" onClick={() => fetchColleges()}>Retry</Button>
+                      </div>
+                    ) : filteredColleges.length > 0 ? (
                       filteredColleges.map(college => (
                         <div 
                           key={college.id}
@@ -188,6 +223,8 @@ export default function OnboardingPage() {
                           <span className={styles.domain}>{college.domain}</span>
                         </div>
                       ))
+                    ) : (
+                      <p className="mono" style={{ fontSize: '0.8rem', padding: '1rem' }}>No colleges found.</p>
                     )}
                   </div>
                 </div>
@@ -215,9 +252,10 @@ export default function OnboardingPage() {
                       className={styles.interestTag}
                     >
                       <Tag 
-                        label={interest} 
                         variant={formData.interests.includes(interest) ? 'secondary' : 'outline'} 
-                      />
+                      >
+                        {interest}
+                      </Tag>
                     </div>
                   ))}
                 </div>
@@ -276,18 +314,14 @@ export default function OnboardingPage() {
           <Button 
             variant="ghost" 
             onClick={prevStep} 
-            disabled={step === 1}
+            disabled={step === 1 || isSubmitting}
           >
             Back
           </Button>
           <Button 
             variant="primary" 
             onClick={nextStep}
-            disabled={
-              (step === 1 && (!formData.collegeId || !formData.year || !formData.branch)) ||
-              (step === 2 && formData.interests.length < 3) ||
-              isSubmitting
-            }
+            disabled={isNextDisabled()}
             loading={isSubmitting}
           >
             {step === 3 ? "Let's Go!" : "Continue"}
