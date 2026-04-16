@@ -4,6 +4,7 @@ import React, { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
+import { authApi } from '@/lib/api';
 import { Input } from '@/components/Input';
 import { Button } from '@/components/Button';
 import { motion } from 'framer-motion';
@@ -29,20 +30,25 @@ export default function SignInPage() {
     setLoading(true);
 
     try {
-      const { user } = await login(email, password);
+      const response: any = await authApi.login({ email, password });
+      const { token, refreshToken, user } = response;
+      
+      // Initialize full session/context
+      await login(token, refreshToken);
       
       if (!user.isVerified) {
         router.push(`/verify-email?userId=${user.id}&email=${encodeURIComponent(email)}`);
         return;
       }
 
-      if (!user.collegeId) {
+      // Check if user has completed onboarding (by checking college)
+      if (!user.college || !user.college.id) {
         router.push('/onboarding');
       } else {
         router.push('/dashboard');
       }
     } catch (err: any) {
-      setError(err.response?.data?.message || 'Login failed. Please check your credentials.');
+      setError(err.message || 'Login failed. Please check your credentials.');
     } finally {
       setLoading(false);
     }

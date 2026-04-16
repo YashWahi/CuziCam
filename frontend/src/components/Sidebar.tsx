@@ -39,13 +39,13 @@ export const Sidebar = () => {
 
       <div className={styles.sidebarFooter}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
-          <Avatar size="sm" src={user?.avatarUrl} name={user?.name} />
+          <Avatar size="sm" url={user?.avatarUrl} name={user?.name} />
           <div style={{ overflow: 'hidden' }}>
             <p className="mono" style={{ fontSize: '0.75rem', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
               {user?.name || 'User'}
             </p>
             <p className="mono" style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>
-              {user?.college || '.edu verified'}
+              {(typeof user?.college === 'object' ? user.college?.name : user?.college) || '.edu verified'}
             </p>
           </div>
         </div>

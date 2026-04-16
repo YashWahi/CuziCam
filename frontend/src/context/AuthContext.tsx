@@ -25,7 +25,7 @@ interface AuthContextType {
   user: User | null;
   isLoggedIn: boolean;
   isLoading: boolean;
-  login: (token: string, refreshToken?: string) => Promise<void>;
+  login: (token: string, refreshToken?: string) => Promise<User | null>;
   logout: () => void;
   updateUser: (userData: Partial<User>) => void;
 }
@@ -34,7 +34,7 @@ const AuthContext = createContext<AuthContextType>({
   user: null,
   isLoggedIn: false,
   isLoading: true,
-  login: async () => {},
+  login: async () => null,
   logout: () => {},
   updateUser: () => {},
 });
@@ -69,18 +69,21 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     initAuth();
   }, []);
 
-  const login = async (token: string, refreshToken?: string) => {
+  const login = async (token: string, refreshToken?: string): Promise<User | null> => {
     Cookies.set("token", token);
     if (refreshToken) {
       Cookies.set("refreshToken", refreshToken);
     }
     try {
       const userData = await authApi.getCurrentUser();
-      setUser((userData as any)?.user || userData);
+      const currentUser = (userData as any)?.user || userData;
+      setUser(currentUser);
       setIsLoggedIn(true);
+      return currentUser;
     } catch (error) {
       console.error("Failed to fetch user during login", error);
       setIsLoggedIn(false);
+      return null;
     }
   };
 

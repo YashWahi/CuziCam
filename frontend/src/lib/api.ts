@@ -119,6 +119,8 @@ export const authApi = {
   logout: () => fetchClient('/auth/logout', { method: 'POST' }),
   getCurrentUser: () => fetchClient('/auth/me'),
   verifyEmail: (token: string) => fetchClient('/auth/verify-email', { method: 'POST', body: JSON.stringify({ token }) }),
+  verifyOTP: (data: { userId: string; otp: string }) => fetchClient('/auth/verify-otp', { method: 'POST', body: JSON.stringify(data) }),
+  resendOtp: (data: { userId: string }) => fetchClient('/auth/resend-otp', { method: 'POST', body: JSON.stringify(data) }),
   forgotPassword: (email: string) => fetchClient('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) }),
   refreshToken: (refreshToken: string) => fetchClient('/auth/refresh', { method: 'POST', body: JSON.stringify({ refreshToken }) }),
 };

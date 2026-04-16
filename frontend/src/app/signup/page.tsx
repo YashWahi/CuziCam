@@ -35,7 +35,7 @@ export default function SignUpPage() {
     setLoading(true);
 
     try {
-      const response = await authApi.register({ name, email, password });
+      const response: any = await authApi.register({ name, email, password });
       // response.data is { message, userId } based on backend controller
       router.push(`/verify-email?userId=${response.userId}&email=${encodeURIComponent(email)}`);
     } catch (err: any) {

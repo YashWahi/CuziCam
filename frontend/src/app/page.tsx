@@ -59,7 +59,7 @@ export default function LandingPage() {
             animate={{ y: [0, -20, 0] }}
             transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
           >
-            <Badge label="Active Match" variant="primary" />
+            <Badge variant="primary">Active Match</Badge>
             <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
               <Avatar size="sm" />
               <div>
@@ -76,8 +76,8 @@ export default function LandingPage() {
           >
             <p className="mono" style={{ fontSize: '0.75rem', color: 'var(--accent-secondary)' }}>SHARED_INTERESTS</p>
             <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-              <Tag label="Coding" variant="outline" />
-              <Tag label="Anime" variant="outline" />
+              <Tag variant="outline">Coding</Tag>
+              <Tag variant="outline">Anime</Tag>
             </div>
           </motion.div>
 
