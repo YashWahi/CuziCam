@@ -42,6 +42,10 @@ app.use(cookieParser());
 app.use(express.json());
 
 // Main Routes
+app.get('/api/v1/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
 app.get('/health', (req, res) => {
   res.json({ 
     status: 'ok', 
