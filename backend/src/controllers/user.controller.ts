@@ -58,3 +58,27 @@ export const onboarding = async (req: AuthRequest, res: Response) => {
     res.status(400).json({ error: error.message });
   }
 };
+
+export const getUserStats = async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    const stats = await userService.getUserStats(userId);
+    res.json(stats);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
+};
+
+export const deleteUser = async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+
+    await userService.deleteUser(userId);
+    res.status(200).json({ message: 'User account deleted successfully.' });
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
+};

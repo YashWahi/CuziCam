@@ -9,5 +9,7 @@ router.put('/profile', authenticate, userController.updateProfile);
 router.get('/connections', authenticate, userController.getConnections);
 router.get('/leaderboard', authenticate, userController.getLeaderboard);
 router.post('/me/onboarding', authenticate, userController.onboarding);
+router.get('/me/stats', authenticate, userController.getUserStats);
+router.delete('/me', authenticate, userController.deleteUser);
 
 export default router;

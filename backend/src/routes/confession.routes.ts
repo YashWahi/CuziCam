@@ -12,5 +12,6 @@ router.post('/', authenticate, createConfession);
 
 // Upvote a confession
 router.post('/:id/upvote', authenticate, upvoteConfession);
+router.post('/:id/like', authenticate, upvoteConfession);
 
 export default router;
