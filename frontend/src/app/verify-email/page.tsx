@@ -4,12 +4,14 @@ import React, { useState, useEffect, Suspense, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { authApi } from '@/lib/api';
+import { useAuth } from '@/context/AuthContext';
 import { Button } from '@/components/Button';
 import { Input } from '@/components/Input';
 import styles from './page.module.css';
 
 function VerifyEmailContent() {
   const router = useRouter();
+  const { login } = useAuth();
   const searchParams = useSearchParams();
   const userId = searchParams.get('userId');
   const email = searchParams.get('email');
@@ -69,7 +71,13 @@ function VerifyEmailContent() {
     setError('');
     
     try {
-      await authApi.verifyOTP({ userId: userId!, otp: otpCode });
+      const response: any = await authApi.verifyOTP({ userId: userId!, otp: otpCode });
+      
+      // Auto login if tokens are returned
+      if (response.token) {
+        await login(response.token, response.refreshToken);
+      }
+      
       setSuccess('Email verified successfully! Redirecting...');
       
       setTimeout(() => {

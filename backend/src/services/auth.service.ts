@@ -6,18 +6,13 @@ import { redis } from '../lib/redis';
 import emailService from './email.service';
 
 // Known India college domains
-const KNOWN_EDU_DOMAINS = [
-  'iit.ac.in', 'bits-pilani.ac.in', 'nit.ac.in', 'vit.ac.in', 'manipal.edu',
-  'srm.edu.in', 'amity.edu', 'du.ac.in', 'mu.ac.in', 'mit.edu', 'stanford.edu',
-  'harvard.edu', 'cam.ac.uk', 'iim.ac.in', 'iisc.ac.in',
-];
+// Removed hardcoded domain list; validation now queries the College table
 
-export const isValidEduEmail = (email: string): boolean => {
+export const isValidEduEmail = async (email: string): Promise<boolean> => {
   const domain = email.split('@')[1]?.toLowerCase();
   if (!domain) return false;
-  return KNOWN_EDU_DOMAINS.some(
-    (d) => domain === d || domain.endsWith(`.${d}`)
-  );
+  const college = await prisma.college.findUnique({ where: { domain } });
+  return !!college;
 };
 
 export const registerWithEmail = async (data: {
@@ -29,7 +24,7 @@ export const registerWithEmail = async (data: {
   branch?: string;
   interests?: string[];
 }) => {
-  if (!isValidEduEmail(data.email)) {
+  if (!(await isValidEduEmail(data.email))) {
     throw new Error('Please use a valid college email address.');
   }
 
@@ -133,7 +128,7 @@ export const googleOAuthLogin = async (data: {
   avatarUrl?: string;
   collegeId?: string;
 }) => {
-  if (!isValidEduEmail(data.email)) {
+  if (!(await isValidEduEmail(data.email))) {
     throw new Error('Please use a valid college email address.');
   }
 
