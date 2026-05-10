@@ -2,9 +2,10 @@ import React from 'react';
 import styles from './Button.module.css';
 
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'primary' | 'secondary' | 'ghost' | 'danger';
+  variant?: 'primary' | 'secondary' | 'ghost' | 'danger' | 'outline';
   size?: 'sm' | 'md' | 'lg';
   fullWidth?: boolean;
+  loading?: boolean;
 }
 
 export function Button({
@@ -12,6 +13,7 @@ export function Button({
   variant = 'primary',
   size = 'md',
   fullWidth = false,
+  loading = false,
   children,
   ...props
 }: ButtonProps) {
@@ -19,10 +21,18 @@ export function Button({
     <button
       className={`${styles.btn} ${styles[variant]} ${styles[size]} ${
         fullWidth ? styles.fullWidth : ''
-      } ${className}`}
+      } ${loading ? styles.loading : ''} ${className}`}
+      disabled={loading || props.disabled}
       {...props}
     >
-      {children}
+      {loading ? (
+        <>
+          <span className={styles.spinner}></span>
+          <span>Loading...</span>
+        </>
+      ) : (
+        children
+      )}
     </button>
   );
 }

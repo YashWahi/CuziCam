@@ -92,7 +92,7 @@ export const getConnections = async (userId: string) => {
       userId: otherUser.id,
       name: otherUser.name,
       avatarUrl: otherUser.avatarUrl,
-      college: otherUser.college.name,
+      college: otherUser.college?.name || 'Unknown',
       connectedAt: conn.createdAt,
     };
   });
@@ -112,14 +112,14 @@ export const getLeaderboard = async () => {
   });
 };
 
-export const onboarding = async (userId: string, data: {
+export const completeOnboarding = async (userId: string, data: {
   collegeId: string;
   year?: string;
   branch?: string;
   interests: string[];
   bio?: string;
 }) => {
-  const user = await prisma.user.update({
+  const updatedUser = await prisma.user.update({
     where: { id: userId },
     data: {
       collegeId: data.collegeId,
@@ -130,8 +130,57 @@ export const onboarding = async (userId: string, data: {
     },
   });
 
-  return {
-    ...user,
-    interests: user.interests ? JSON.parse(user.interests) : [],
+  return { 
+    ...updatedUser, 
+    interests: updatedUser.interests ? JSON.parse(updatedUser.interests) : [] 
   };
+};
+
+export const getUserStats = async (userId: string) => {
+  const [matchesMade, confessionsPosted, starsReceived, user] = await Promise.all([
+    prisma.matchSession.count({
+      where: {
+        OR: [
+          { userAId: userId },
+          { userBId: userId },
+        ],
+      },
+    }),
+    prisma.confession.count({
+      where: { authorId: userId },
+    }),
+    prisma.star.count({
+      where: { receiverId: userId },
+    }),
+    prisma.user.findUnique({
+      where: { id: userId },
+      select: { vibeScore: true },
+    }),
+  ]);
+
+  return {
+    matchesMade,
+    confessionsPosted,
+    starsReceived,
+    vibeScore: user?.vibeScore || 0,
+  };
+};
+
+export const deleteUser = async (userId: string) => {
+  const timestamp = Date.now();
+  
+  // Soft delete: Mark as banned and scrub personal data
+  return prisma.user.update({
+    where: { id: userId },
+    data: {
+      isBanned: true,
+      name: 'Deleted User',
+      email: `deleted_${timestamp}@cuzicam.com`, // Change email to free up original and scrub
+      bio: null,
+      avatarUrl: null,
+      googleId: null,
+      refreshToken: null,
+      passwordHash: null,
+    },
+  });
 };

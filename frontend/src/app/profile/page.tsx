@@ -1,8 +1,9 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { motion } from 'framer-motion';
+import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/context/AuthContext';
+import fetchClient, { userApi } from '@/lib/api';
 import { Sidebar } from '@/components/Sidebar';
 import { Input } from '@/components/Input';
 import { Button } from '@/components/Button';
@@ -22,7 +23,7 @@ const INTERESTS = [
 const YEAR_OPTIONS = ['Freshman', 'Sophomore', 'Junior', 'Senior', 'Masters', 'PhD'];
 
 export default function ProfilePage() {
-  const { user, updateUser } = useAuth();
+  const { user, logout } = useAuth();
   
   const [formData, setFormData] = useState({
     name: '',
@@ -33,6 +34,15 @@ export default function ProfilePage() {
 
   const [isSaving, setIsSaving] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'success' | 'error'>('idle');
+  const [stats, setStats] = useState<any>(null);
+  const [isDeactivateModalOpen, setIsDeactivateModalOpen] = useState(false);
+  const [isDeactivating, setIsDeactivating] = useState(false);
+
+  useEffect(() => {
+    userApi.getStats()
+      .then(data => setStats(data))
+      .catch(err => console.error("Failed to load stats", err));
+  }, []);
 
   useEffect(() => {
     if (user) {
@@ -40,7 +50,7 @@ export default function ProfilePage() {
         name: user.name || '',
         year: user.year || '',
         branch: user.branch || '',
-        interests: user.interests || []
+        interests: Array.isArray(user.interests) ? user.interests : (typeof user.interests === 'string' && user.interests ? [user.interests] : []),
       });
     }
   }, [user]);
@@ -59,18 +69,64 @@ export default function ProfilePage() {
     setIsSaving(true);
     setSaveStatus('idle');
 
-    // Simulate API call
-    setTimeout(() => {
-      updateUser(formData);
-      setIsSaving(false);
+    try {
+      await userApi.updateProfile(formData);
       setSaveStatus('success');
+    } catch (err) {
+      console.error(err);
+      setSaveStatus('error');
+    } finally {
+      setIsSaving(false);
       setTimeout(() => setSaveStatus('idle'), 3000);
-    }, 1000);
+    }
+  };
+
+  const handleDeactivate = async () => {
+    setIsDeactivating(true);
+    try {
+      await fetchClient('/users/me', { method: 'DELETE' });
+      if (logout) {
+        logout();
+      }
+      window.location.href = '/';
+    } catch (err) {
+      console.error(err);
+      setIsDeactivating(false);
+      setIsDeactivateModalOpen(false);
+    }
   };
 
   return (
     <div className={styles.profileLayout}>
       <Sidebar />
+
+      {isDeactivateModalOpen && (
+        <div style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 100 }}>
+          <motion.div initial={{ scale: 0.9, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} style={{ background: 'var(--bg-primary)', padding: '2rem', borderRadius: 'var(--border-radius)', border: '1px solid var(--border-light)', maxWidth: '400px', width: '90%' }}>
+            <h3 className="serif" style={{ color: 'var(--danger)', marginBottom: '1rem', fontSize: '1.5rem' }}>Deactivate Account</h3>
+            <p className="mono" style={{ color: 'var(--text-primary)', marginBottom: '2rem' }}>Are you sure? This cannot be undone.</p>
+            <div style={{ display: 'flex', gap: '1rem', justifyContent: 'flex-end' }}>
+              <Button variant="ghost" onClick={() => setIsDeactivateModalOpen(false)} disabled={isDeactivating}>Cancel</Button>
+              <Button variant="danger" onClick={handleDeactivate} disabled={isDeactivating}>{isDeactivating ? 'Deactivating...' : 'Confirm'}</Button>
+            </div>
+          </motion.div>
+        </div>
+      )}
+
+      <div style={{ position: 'fixed', bottom: '2rem', right: '2rem', zIndex: 50, display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+        <AnimatePresence>
+          {saveStatus === 'success' && (
+            <motion.div initial={{ opacity: 0, y: 50 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 50 }} style={{ padding: '1rem 1.5rem', background: 'var(--bg-surface-elevated)', border: '1px solid var(--accent-primary)', borderRadius: 'var(--border-radius)', color: 'var(--text-primary)', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
+              <span className="mono" style={{ color: 'var(--accent-primary)', fontSize: '0.875rem' }}>Profile updated ✓</span>
+            </motion.div>
+          )}
+          {saveStatus === 'error' && (
+            <motion.div initial={{ opacity: 0, y: 50 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: 50 }} style={{ padding: '1rem 1.5rem', background: 'var(--bg-surface-elevated)', border: '1px solid var(--danger)', borderRadius: 'var(--border-radius)', color: 'var(--text-primary)', boxShadow: '0 4px 12px rgba(0,0,0,0.1)' }}>
+               <span className="mono" style={{ color: 'var(--danger)', fontSize: '0.875rem' }}>Failed to save. Please try again.</span>
+            </motion.div>
+          )}
+        </AnimatePresence>
+      </div>
 
       <main className={styles.mainContainer}>
         <header className={styles.header}>
@@ -141,9 +197,10 @@ export default function ProfilePage() {
                       className={styles.interestBtn}
                     >
                       <Tag 
-                        label={interest} 
-                        variant={formData.interests.includes(interest) ? 'primary' : 'outline'} 
-                      />
+                        active={formData.interests.includes(interest)}
+                      >
+                         {interest}
+                      </Tag>
                     </div>
                   ))}
                 </div>
@@ -157,18 +214,13 @@ export default function ProfilePage() {
                   disabled={isSaving}
                   style={{ minWidth: '200px' }}
                 >
-                  {isSaving ? 'Saving...' : 'Update Profile'}
+                  {isSaving ? (
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', justifyContent: 'center' }}>
+                      <motion.div animate={{ rotate: 360 }} transition={{ repeat: Infinity, duration: 1, ease: 'linear' }} style={{ height: '1.25rem', width: '1.25rem', border: '2px solid transparent', borderTopColor: 'currentColor', borderRadius: '50%' }} />
+                      Saving...
+                    </span>
+                  ) : 'Update Profile'}
                 </Button>
-                {saveStatus === 'success' && (
-                  <motion.span 
-                    initial={{ opacity: 0, y: 10 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    className="mono" 
-                    style={{ color: 'var(--accent-primary)', fontSize: '0.875rem' }}
-                  >
-                    ✓ Profile updated successfully
-                  </motion.span>
-                )}
               </div>
             </form>
 
@@ -177,28 +229,28 @@ export default function ProfilePage() {
               <p className="mono" style={{ fontSize: '0.8rem', color: 'var(--text-muted)', marginBottom: '1.5rem' }}>
                 Once you deactivate your account, there is no going back. Please be certain.
               </p>
-              <Button variant="danger" size="sm">Deactivate Account</Button>
+              <Button variant="danger" size="sm" type="button" onClick={() => setIsDeactivateModalOpen(true)}>Deactivate Account</Button>
             </div>
           </section>
 
           <aside className={styles.statsSidebar}>
             <div className={styles.statCard}>
               <span className={styles.statLabel}>Vibe Score</span>
-              <div className={styles.statValue}>{user?.vibeScore || '7.5'}</div>
+              <div className={styles.statValue}>{stats?.vibeScore || user?.vibeScore || '0'}</div>
               <p className="mono" style={{ fontSize: '0.75rem', color: 'var(--text-muted)' }}>
                 Your score is based on etiquette and positive matches.
               </p>
               <div className={styles.rankBadge}>
-                <Badge label="Elite Student" variant="primary" />
+                <Badge variant="primary">Elite Student</Badge>
               </div>
             </div>
 
-            <Card glass style={{ padding: '1.5rem' }}>
+            <Card style={{ padding: '1.5rem' }}>
               <span className={styles.statLabel}>Verification</span>
               <div style={{ marginTop: '1rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
                 <div style={{ color: 'var(--accent-primary)', fontSize: '1.5rem' }}>✓</div>
                 <div>
-                  <p className="mono" style={{ fontSize: '0.875rem' }}>{user?.college}</p>
+                  <p className="mono" style={{ fontSize: '0.875rem' }}>{user?.college?.name}</p>
                   <p className="mono" style={{ fontSize: '0.7rem', color: 'var(--text-muted)' }}>Institutional access active</p>
                 </div>
               </div>
@@ -209,15 +261,15 @@ export default function ProfilePage() {
               <div style={{ marginTop: '1rem' }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
                   <span className="mono" style={{ fontSize: '0.75rem' }}>Matches made</span>
-                  <span className="mono" style={{ fontSize: '0.75rem', color: 'var(--accent-primary)' }}>124</span>
+                  <span className="mono" style={{ fontSize: '0.75rem', color: 'var(--accent-primary)' }}>{stats?.matchesMade || 0}</span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '0.5rem' }}>
                   <span className="mono" style={{ fontSize: '0.75rem' }}>Confessions posted</span>
-                  <span className="mono" style={{ fontSize: '0.75rem', color: 'var(--accent-secondary)' }}>12</span>
+                  <span className="mono" style={{ fontSize: '0.75rem', color: 'var(--accent-secondary)' }}>{stats?.confessionsPosted || 0}</span>
                 </div>
                 <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                   <span className="mono" style={{ fontSize: '0.75rem' }}>Stars received</span>
-                  <span className="mono" style={{ fontSize: '0.75rem', color: 'var(--accent-tertiary)' }}>89</span>
+                  <span className="mono" style={{ fontSize: '0.75rem', color: 'var(--accent-tertiary)' }}>{stats?.starsReceived || 0}</span>
                 </div>
               </div>
             </Card>

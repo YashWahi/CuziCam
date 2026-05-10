@@ -7,9 +7,10 @@ interface AvatarProps {
   size?: 'sm' | 'md' | 'lg' | 'xl';
   online?: boolean;
   className?: string;
+  style?: React.CSSProperties;
 }
 
-export function Avatar({ name = 'U', url, size = 'md', online = false, className = '' }: AvatarProps) {
+export function Avatar({ name = 'U', url, size = 'md', online = false, className = '', style }: AvatarProps) {
   const initials = name
     .split(' ')
     .map(n => n[0])
@@ -18,7 +19,7 @@ export function Avatar({ name = 'U', url, size = 'md', online = false, className
     .toUpperCase();
 
   return (
-    <div className={`${styles.avatarWrapper} ${styles[size]} ${className}`}>
+    <div className={`${styles.avatarWrapper} ${styles[size]} ${className}`} style={style}>
       {url ? (
         <img src={url} alt={name} className={styles.image} />
       ) : (

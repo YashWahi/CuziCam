@@ -24,6 +24,8 @@ export const registerSocketHandlers = (io: Server) => {
     socket.on('authenticate', async (token: string) => {
       try {
         const decoded = verifyToken(token);
+        if (!decoded) throw new Error('Invalid token');
+        
         socketUserMap.set(socket.id, decoded.userId);
         
         await prisma.user.update({
@@ -48,7 +50,7 @@ export const registerSocketHandlers = (io: Server) => {
       const entry: QueueEntry = {
         userId: user.id,
         socketId: socket.id,
-        collegeId: user.collegeId,
+        collegeId: user.collegeId || '',
         interests: user.interests ? JSON.parse(user.interests) : [],
         year: user.year || undefined,
         vibeScore: user.vibeScore,

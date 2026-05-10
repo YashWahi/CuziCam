@@ -6,7 +6,7 @@ import random
 app = FastAPI(title="CuziCam AI Service")
 
 class ToxicityRequest(BaseModel):
-    text: string
+    text: str
 
 class IcebreakerRequest(BaseModel):
     interests_a: List[str]

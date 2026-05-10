@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { DM_Sans, Space_Mono, Instrument_Serif } from "next/font/google";
 import { Providers } from "./providers";
+import { AuthProvider } from "@/context/AuthContext";
 import "./globals.css";
 
 const dmSans = DM_Sans({
@@ -36,9 +37,10 @@ export default function RootLayout({
       <body>
         {/* SVG Texture overlay */}
         <div className="noise-overlay" />
-        <Providers>{children}</Providers>
+        <AuthProvider>
+          <Providers>{children}</Providers>
+        </AuthProvider>
       </body>
     </html>
   );
 }
-

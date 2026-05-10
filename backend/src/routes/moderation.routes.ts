@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { getAllReports, banUser, getModerationStats } from '../controllers/moderation.controller';
+import { getAllReports, banUser, getModerationStats, createReport } from '../controllers/moderation.controller';
 import { authenticate, requireRole } from '../middleware/auth.middleware';
 
 const router = Router();
@@ -8,5 +8,8 @@ const router = Router();
 router.get('/reports', authenticate, requireRole(['ADMIN', 'MODERATOR']), getAllReports);
 router.post('/ban', authenticate, requireRole(['ADMIN']), banUser);
 router.get('/stats', authenticate, requireRole(['ADMIN', 'MODERATOR']), getModerationStats);
+
+// Public reporting route (any auth user can report)
+router.post('/report', authenticate, createReport);
 
 export default router;
