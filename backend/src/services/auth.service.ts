@@ -58,7 +58,7 @@ export const verifyOTP = async (userId: string, otp: string) => {
   const cached = await redis.get(`otp:${userId}`);
   if (!cached || cached !== otp) throw new Error('Invalid or expired OTP.');
 
-  await prisma.user.update({
+  const user = await prisma.user.update({
     where: { id: userId },
     data: { 
       isEmailVerified: true,
@@ -67,7 +67,7 @@ export const verifyOTP = async (userId: string, otp: string) => {
   });
 
   await redis.del(`otp:${userId}`);
-  return true;
+  return user;
 };
 
 export const loginWithEmail = async (email: string, password: string) => {

@@ -74,8 +74,8 @@ function VerifyEmailContent() {
       const response: any = await authApi.verifyOTP({ userId: userId!, otp: otpCode });
       
       // Auto login if tokens are returned
-      if (response.token) {
-        await login(response.token, response.refreshToken);
+      if (response.accessToken) {
+        await login(response.accessToken, response.refreshToken);
       }
       
       setSuccess('Email verified successfully! Redirecting...');

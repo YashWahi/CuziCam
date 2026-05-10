@@ -32,7 +32,7 @@ async function fetchClient<T>(endpoint: string, options: FetchClientOptions = {}
   }
 
   // Get token from cookies
-  const token = Cookies.get('token');
+  const token = Cookies.get('accessToken');
   
   const headers: HeadersInit = {
     'Content-Type': 'application/json',
@@ -66,7 +66,7 @@ async function fetchClient<T>(endpoint: string, options: FetchClientOptions = {}
           const data = await refreshResponse.json();
           
           // Save new tokens
-          if (data.token) Cookies.set('token', data.token);
+          if (data.accessToken) Cookies.set('accessToken', data.accessToken);
           if (data.refreshToken) Cookies.set('refreshToken', data.refreshToken);
           
           // Retry the original request exactly once
@@ -78,7 +78,7 @@ async function fetchClient<T>(endpoint: string, options: FetchClientOptions = {}
     }
     
     // If we can't refresh, clear tokens and force login
-    Cookies.remove('token');
+    Cookies.remove('accessToken');
     Cookies.remove('refreshToken');
     
     if (typeof window !== 'undefined') {

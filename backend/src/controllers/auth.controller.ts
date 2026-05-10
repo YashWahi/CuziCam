@@ -1,6 +1,7 @@
 import { Request, Response } from 'express';
 import * as authService from '../services/auth.service';
 import { prisma } from '../lib/prisma';
+import { signToken, signRefreshToken } from '../lib/jwt';
 
 export const register = async (req: Request, res: Response) => {
   try {
@@ -71,8 +72,25 @@ export const verifyEmail = async (req: Request, res: Response) => {
     const { userId, otp } = req.body;
     if (!userId || !otp) return res.status(400).json({ error: 'UserId and OTP are required' });
 
-    await authService.verifyOTP(userId, otp);
-    res.json({ message: 'Email verified successfully' });
+    const user = await authService.verifyOTP(userId, otp);
+
+    // Generate tokens
+    const payload = { userId: user.id, email: user.email, role: user.role };
+    const accessToken = signToken(payload);
+    const refreshToken = signRefreshToken(payload);
+
+    // Save refresh token to database
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { refreshToken, lastSeen: new Date() },
+    });
+
+    return res.json({
+      message: 'Email verified successfully',
+      accessToken,
+      refreshToken,
+      user: { id: user.id, email: user.email, name: user.name }
+    });
   } catch (error: any) {
     res.status(400).json({ error: error.message });
   }

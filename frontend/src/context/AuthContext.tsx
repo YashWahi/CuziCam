@@ -46,7 +46,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   useEffect(() => {
     const initAuth = async () => {
-      const token = Cookies.get("token");
+      const token = Cookies.get("accessToken");
       if (!token) {
         setIsLoading(false);
         return;
@@ -59,7 +59,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         setIsLoggedIn(true);
       } catch (error) {
         setIsLoggedIn(false);
-        Cookies.remove("token");
+        Cookies.remove("accessToken");
         Cookies.remove("refreshToken");
       } finally {
         setIsLoading(false);
@@ -70,7 +70,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   }, []);
 
   const login = async (token: string, refreshToken?: string): Promise<User | null> => {
-    Cookies.set("token", token);
+    Cookies.set("accessToken", token);
     if (refreshToken) {
       Cookies.set("refreshToken", refreshToken);
     }
@@ -88,7 +88,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   };
 
   const logout = () => {
-    Cookies.remove("token");
+    Cookies.remove("accessToken");
     Cookies.remove("refreshToken");
     setUser(null);
     setIsLoggedIn(false);
