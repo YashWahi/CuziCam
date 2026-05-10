@@ -115,7 +115,15 @@ export default function OnboardingPage() {
         preferences: formData.preferences
       }) as any;
       
-      updateUser(response.data || response.user || response);
+      console.log('Onboarding response:', response);
+
+      // Even if updateUser fails, we want to try to redirect
+      try {
+        updateUser(response);
+      } catch (userUpdateError) {
+        console.error('Failed to update user context:', userUpdateError);
+      }
+
       router.push('/dashboard');
     } catch (err: any) {
       console.error('Onboarding submission failed', err);
