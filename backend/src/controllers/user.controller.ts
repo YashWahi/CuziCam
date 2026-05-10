@@ -52,8 +52,8 @@ export const onboarding = async (req: AuthRequest, res: Response) => {
     const userId = req.user?.userId;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
-    const user = await userService.onboarding(userId, req.body);
-    res.json(user);
+    const result = await userService.completeOnboarding(userId, req.body);
+    res.json({ success: true, user: result });
   } catch (error: any) {
     res.status(400).json({ error: error.message });
   }

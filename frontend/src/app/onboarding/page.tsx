@@ -110,7 +110,7 @@ export default function OnboardingPage() {
         collegeId: formData.collegeId,
         year: formData.year,
         branch: formData.branch,
-        interests: formData.interests,
+        interests: Array.isArray(formData.interests) ? formData.interests : JSON.parse(formData.interests),
         bio: formData.bio,
         preferences: formData.preferences
       }) as any;
@@ -119,7 +119,9 @@ export default function OnboardingPage() {
 
       // Even if updateUser fails, we want to try to redirect
       try {
-        updateUser(response);
+        // Backend now returns { success: true, user: result }
+        const userData = response.user || response;
+        updateUser(userData);
       } catch (userUpdateError) {
         console.error('Failed to update user context:', userUpdateError);
       }

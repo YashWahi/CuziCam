@@ -112,14 +112,14 @@ export const getLeaderboard = async () => {
   });
 };
 
-export const onboarding = async (userId: string, data: {
+export const completeOnboarding = async (userId: string, data: {
   collegeId: string;
   year?: string;
   branch?: string;
   interests: string[];
   bio?: string;
 }) => {
-  const user = await prisma.user.update({
+  const updatedUser = await prisma.user.update({
     where: { id: userId },
     data: {
       collegeId: data.collegeId,
@@ -130,9 +130,9 @@ export const onboarding = async (userId: string, data: {
     },
   });
 
-  return {
-    ...user,
-    interests: user.interests ? JSON.parse(user.interests) : [],
+  return { 
+    ...updatedUser, 
+    interests: updatedUser.interests ? JSON.parse(updatedUser.interests) : [] 
   };
 };
 
