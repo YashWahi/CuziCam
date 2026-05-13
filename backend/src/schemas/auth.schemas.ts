@@ -1,11 +1,7 @@
 import { z } from 'zod';
 
-const eduEmail = z.string().email().refine((email) => email.toLowerCase().endsWith('.edu'), {
-  message: 'Email must be a .edu address',
-});
-
 export const registerSchema = z.object({
-  email: eduEmail.transform((email) => email.toLowerCase().trim()),
+  email: z.string().email().transform((email) => email.toLowerCase().trim()),
   password: z.string().min(8).max(128),
   name: z.string().trim().min(1).max(80),
   gender: z.enum(['male', 'female']),

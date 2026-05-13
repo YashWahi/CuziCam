@@ -277,15 +277,25 @@ export default function ChatSessionPage() {
     setIsReporting(true);
     try {
       const reportedId = sessionStorage.getItem('partnerId');
-      if (!reportedId) throw new Error('Missing partner');
+      if (!reportedId) {
+        // toast-style error — fallback since toast isn't imported
+        setStatus('Cannot report: session data missing. Please reconnect.');
+        setIsReportModalOpen(false);
+        return;
+      }
       await userApi.report({ 
         reportedId,
         sessionId, 
         reason: reportReason 
       });
+      // Chunk F: clean up sessionStorage after report
+      sessionStorage.removeItem('partnerId');
+      sessionStorage.removeItem('partnerName');
+      sessionStorage.removeItem('partnerCollege');
+      sessionStorage.removeItem('partnerGender');
       socket?.emit('chat:leave');
       setIsReportModalOpen(false);
-      router.push('/queue');
+      router.push('/home');
     } catch (err) {
     } finally {
       setIsReporting(false);

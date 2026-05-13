@@ -76,9 +76,18 @@ export const reportUser = async (req: AuthRequest, res: Response) => {
     if (!reporterId) return res.status(401).json({ error: 'Unauthorized' });
     if (reporterId === reportedId) return res.status(400).json({ error: 'Cannot report yourself' });
 
+    // Map lowercase API reason to Prisma enum value
+    const reasonMap: Record<string, string> = {
+      fake_profile: 'FAKE_PROFILE',
+      harassment: 'HARASSMENT',
+      inappropriate_content: 'INAPPROPRIATE_CONTENT',
+      underage: 'UNDERAGE',
+    };
+    const enumReason = reasonMap[reason] || reason.toUpperCase();
+
     const report = await prisma.$transaction(async (tx) => {
       const createdReport = await tx.report.create({
-        data: { reporterId, reportedId, reason, sessionId, status: 'PENDING' },
+        data: { reporterId, reportedId, reason: enumReason as any, sessionId },
       });
 
       await tx.block.upsert({

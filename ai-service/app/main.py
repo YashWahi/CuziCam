@@ -1,8 +1,9 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Header, HTTPException, Depends
 from pydantic import BaseModel, Field
 from typing import List
 import random
 import re
+import os
 
 try:
     from better_profanity import profanity
@@ -11,6 +12,15 @@ except Exception:
     profanity = None
 
 app = FastAPI(title="CuziCam AI Service")
+
+
+# ──────────────────────────────────────────────────────────────
+# SECURITY — Shared secret header validation (Chunk I)
+# ──────────────────────────────────────────────────────────────
+async def verify_secret(x_internal_secret: str = Header(...)):
+    expected = os.getenv("SHARED_SECRET")
+    if not expected or x_internal_secret != expected:
+        raise HTTPException(status_code=403, detail="Forbidden")
 
 
 class ModerationRequest(BaseModel):
@@ -51,7 +61,7 @@ TOXIC_PATTERNS = [
 ]
 
 
-@app.post("/moderate")
+@app.post("/moderate", dependencies=[Depends(verify_secret)])
 async def moderate(req: ModerationRequest):
     message = req.message
     matched_pattern = any(pattern.search(message) for pattern in TOXIC_PATTERNS)
@@ -61,7 +71,7 @@ async def moderate(req: ModerationRequest):
     return {"is_toxic": is_toxic, "confidence": confidence}
 
 
-@app.post("/icebreaker")
+@app.post("/icebreaker", dependencies=[Depends(verify_secret)])
 async def generate_icebreaker(req: IcebreakerRequest):
     normalized_a = {interest.strip() for interest in req.interests_a if interest.strip()}
     normalized_b = {interest.strip() for interest in req.interests_b if interest.strip()}

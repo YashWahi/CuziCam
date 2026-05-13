@@ -6,8 +6,35 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = "file:./dev.db"
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ──────────────────────────────────────────────────────────────
+// ENUMS
+// ──────────────────────────────────────────────────────────────
+
+enum Gender {
+  MALE
+  FEMALE
+}
+
+enum ReportReason {
+  FAKE_PROFILE
+  HARASSMENT
+  INAPPROPRIATE_CONTENT
+  UNDERAGE
+}
+
+enum ReportStatus {
+  PENDING
+  RESOLVED
+  DISMISSED
+}
+
+enum UserRole {
+  USER
+  ADMIN
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -36,9 +63,9 @@ model User {
   bio             String?
   year            String?   // e.g. "2nd Year"
   branch          String?   // e.g. "CSE"
-  interests       String    @default("[]") // SQLite doesn't support String[], using JSON string
-  gender          String?   // Changed from Gender enum to String for SQLite
-  role            String    @default("USER") // Changed from Role enum to String for SQLite
+  interests       String[]  @default([])
+  gender          String?   // stored as lowercase string for flexibility
+  role            UserRole  @default(USER)
   vibeScore       Float     @default(5.0) // 0-10 reputation score
   onboardingComplete Boolean @default(false)
   isVerified      Boolean   @default(false)
@@ -179,9 +206,9 @@ model ConfessionUpvote {
 // ──────────────────────────────────────────────────────────────
 model Report {
   id          String       @id @default(uuid())
-  reason      String       // Changed from ReportReason enum to String
+  reason      ReportReason
   description String?
-  status      String       @default("PENDING") // Changed from ReportStatus enum to String
+  status      ReportStatus @default(PENDING)
   resolvedAt  DateTime?
   createdAt   DateTime     @default(now())
 
@@ -212,5 +239,3 @@ model Block {
 
   @@unique([blockerId, blockedId])
 }
-
-
