@@ -19,6 +19,7 @@ type User = {
   avatarUrl?: string;
   badges?: string;
   strictPreference: boolean;
+  onboardingComplete: boolean;
 };
 
 interface AuthContextType {
@@ -81,7 +82,6 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       setIsLoggedIn(true);
       return currentUser;
     } catch (error) {
-      console.error("Failed to fetch user during login", error);
       setIsLoggedIn(false);
       return null;
     }

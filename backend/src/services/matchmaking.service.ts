@@ -5,121 +5,124 @@ export interface QueueEntry {
   userId: string;
   socketId: string;
   collegeId: string;
+  collegeName: string;
+  name: string;
   interests: string[];
-  year?: string;
-  vibeScore: number;
-  gender?: string;
-  mode: string;
-  filters: {
-    genderPref?: string;
-    sameCollege?: boolean;
-    sameBranch?: boolean;
-    branch?: string;
-  };
+  gender: 'male' | 'female';
   joinedAt: number;
 }
 
-const MAIN_QUEUE_KEY = 'queue:pool';
-const CHAOS_WINDOW_KEY = 'chaos:active';
+const queueKey = (gender: 'male' | 'female') => `queue:${gender}`;
+const CHAOS_START_KEY = 'chaos:start';
+const CHAOS_DURATION_MS = 2 * 60 * 60 * 1000;
 
-export const isChaosWindowActive = async (): Promise<boolean> => {
-  const val = await redis.get(CHAOS_WINDOW_KEY);
-  return val === 'true';
+export const computeMatchScore = (a: QueueEntry, b: QueueEntry): number => {
+  const shared = a.interests.filter((interest) => b.interests.includes(interest)).length;
+  return shared * 10 + (a.collegeId && a.collegeId === b.collegeId ? 20 : 0);
 };
 
-export const setChaosWindow = async (active: boolean, ttlSeconds?: number): Promise<void> => {
-  if (active && ttlSeconds) {
-    await redis.set(CHAOS_WINDOW_KEY, 'true', 'EX', ttlSeconds);
-  } else if (active) {
-    await redis.set(CHAOS_WINDOW_KEY, 'true');
-  } else {
-    await redis.del(CHAOS_WINDOW_KEY);
-  }
+export const getChaosWindowStatus = async () => {
+  const rawStart = await redis.get(CHAOS_START_KEY);
+  const chaosStart = rawStart ? Number(rawStart) : null;
+  const chaosEnd = chaosStart ? chaosStart + CHAOS_DURATION_MS : null;
+  const now = Date.now();
+
+  return {
+    isChaosWindow: Boolean(chaosStart && chaosEnd && now >= chaosStart && now < chaosEnd),
+    chaosStart,
+    chaosEnd,
+  };
+};
+
+export const isChaosWindowActive = async (): Promise<boolean> => {
+  return (await getChaosWindowStatus()).isChaosWindow;
+};
+
+export const setChaosStart = async (start: number): Promise<void> => {
+  await redis.set(CHAOS_START_KEY, String(start));
 };
 
 export const enqueue = async (entry: QueueEntry): Promise<void> => {
-  await redis.zadd(MAIN_QUEUE_KEY, entry.joinedAt, JSON.stringify(entry));
+  await redis.zadd(queueKey(entry.gender), entry.joinedAt, JSON.stringify(entry));
   await redis.set(`session:${entry.socketId}`, JSON.stringify(entry), 'EX', 3600);
 };
 
 export const dequeue = async (socketId: string): Promise<void> => {
   const sessionData = await redis.get(`session:${socketId}`);
   if (!sessionData) return;
-  await redis.zrem(MAIN_QUEUE_KEY, sessionData);
-  await redis.del(`session:${socketId}`);
+  const entry = JSON.parse(sessionData) as QueueEntry;
+  await redis.multi()
+    .zrem(queueKey(entry.gender), sessionData)
+    .del(`session:${socketId}`)
+    .exec();
 };
 
-const computeMatchScore = (a: QueueEntry, b: QueueEntry, chaosActive: boolean): number => {
-  let score = 0;
+const loadQueueEntries = async (entry: QueueEntry): Promise<QueueEntry[]> => {
+  const chaosActive = await isChaosWindowActive();
+  const keys = chaosActive ? [queueKey('male'), queueKey('female')] : [queueKey(entry.gender)];
+  const rawLists = await Promise.all(keys.map((key) => redis.zrange(key, 0, -1)));
 
-  // +40 if shared interests (parse JSON string if needed, but here it's already an array in QueueEntry)
-  const sharedInterests = a.interests.filter((i) => b.interests.includes(i));
-  if (sharedInterests.length > 0) score += 40;
-
-  // +25 if same college
-  if (a.collegeId === b.collegeId) score += 25;
-
-  // +15 if same year
-  if (a.year && a.year === b.year) score += 15;
-
-  // +10 if same mode preference
-  if (a.mode === b.mode) score += 10;
-
-  // +10 wait bonus (1pt per 5 seconds in queue, max 10)
-  const waitA = (Date.now() - a.joinedAt) / 5000;
-  const waitB = (Date.now() - b.joinedAt) / 5000;
-  score += Math.min(10, Math.floor(waitA + waitB));
-
-  // return -1 if gender preference doesn't match AND chaos is not active
-  if (!chaosActive) {
-    if (a.filters.genderPref && a.filters.genderPref !== b.gender) return -1;
-    if (b.filters.genderPref && b.filters.genderPref !== a.gender) return -1;
-  }
-
-  return score;
+  return rawLists
+    .flat()
+    .map((raw) => JSON.parse(raw) as QueueEntry)
+    .filter((candidate) => candidate.userId !== entry.userId && candidate.socketId !== entry.socketId);
 };
 
 export const findBestMatch = async (entry: QueueEntry): Promise<QueueEntry | null> => {
-  const chaosActive = await isChaosWindowActive();
-  const rawEntries = await redis.zrange(MAIN_QUEUE_KEY, 0, -1);
+  const candidates = await loadQueueEntries(entry);
+  if (candidates.length === 0) return null;
 
-  // Threshold starts at 60, decreases by 10 every 15 seconds of waiting, floor at 20
-  const waitSeconds = (Date.now() - entry.joinedAt) / 1000;
-  const threshold = Math.max(20, 60 - Math.floor(waitSeconds / 15) * 10);
+  const blocks = await prisma.block.findMany({
+    where: {
+      OR: [
+        { blockerId: entry.userId, blockedId: { in: candidates.map((c) => c.userId) } },
+        { blockedId: entry.userId, blockerId: { in: candidates.map((c) => c.userId) } },
+      ],
+    },
+    select: { blockerId: true, blockedId: true },
+  });
 
-  let bestMatch: QueueEntry | null = null;
+  const blockedUserIds = new Set(
+    blocks.map((block) => block.blockerId === entry.userId ? block.blockedId : block.blockerId)
+  );
+
+  let best: QueueEntry | null = null;
   let bestScore = -1;
 
-  for (const raw of rawEntries) {
-    const candidate: QueueEntry = JSON.parse(raw);
-    if (candidate.socketId === entry.socketId || candidate.userId === entry.userId) continue;
-
-    // Check blocks
-    const isBlocked = await prisma.block.findFirst({
-      where: {
-        OR: [
-          { blockerId: entry.userId, blockedId: candidate.userId },
-          { blockerId: candidate.userId, blockedId: entry.userId },
-        ],
-      },
-    });
-    if (isBlocked) continue;
-
-    const score = computeMatchScore(entry, candidate, chaosActive);
-    if (score >= threshold && score > bestScore) {
+  for (const candidate of candidates) {
+    if (blockedUserIds.has(candidate.userId)) continue;
+    const score = computeMatchScore(entry, candidate);
+    if (score > bestScore) {
+      best = candidate;
       bestScore = score;
-      bestMatch = candidate;
     }
   }
 
-  return bestMatch;
+  return best;
 };
 
-export const setActiveSession = async (socketIdA: string, socketIdB: string, sessionId: string) => {
-  const data = JSON.stringify({ sessionId, partner: socketIdB });
-  const dataB = JSON.stringify({ sessionId, partner: socketIdA });
-  await redis.set(`active:${socketIdA}`, data, 'EX', 7200);
-  await redis.set(`active:${socketIdB}`, dataB, 'EX', 7200);
+export const removeMatchedPair = async (a: QueueEntry, b: QueueEntry) => {
+  await redis.multi()
+    .zrem(queueKey(a.gender), JSON.stringify(a))
+    .zrem(queueKey(b.gender), JSON.stringify(b))
+    .del(`session:${a.socketId}`)
+    .del(`session:${b.socketId}`)
+    .exec();
+};
+
+export const setActiveSession = async (
+  socketIdA: string,
+  socketIdB: string,
+  userIdA: string,
+  userIdB: string,
+  sessionId: string,
+) => {
+  await redis.multi()
+    .set(`active:${socketIdA}`, JSON.stringify({ sessionId, partner: socketIdB, partnerUserId: userIdB }), 'EX', 7200)
+    .set(`active:${socketIdB}`, JSON.stringify({ sessionId, partner: socketIdA, partnerUserId: userIdA }), 'EX', 7200)
+    .set(`active-user:${userIdA}`, socketIdA, 'EX', 7200)
+    .set(`active-user:${userIdB}`, socketIdB, 'EX', 7200)
+    .exec();
 };
 
 export const getActiveSession = async (socketId: string) => {
@@ -128,14 +131,13 @@ export const getActiveSession = async (socketId: string) => {
 };
 
 export const clearActiveSession = async (socketIdA: string, socketIdB: string) => {
-  await redis.del(`active:${socketIdA}`);
-  await redis.del(`active:${socketIdB}`);
+  const [sessionA, sessionB] = await Promise.all([getActiveSession(socketIdA), getActiveSession(socketIdB)]);
+  await redis.multi()
+    .del(`active:${socketIdA}`)
+    .del(`active:${socketIdB}`)
+    .del(sessionA?.partnerUserId ? `active-user:${sessionA.partnerUserId}` : 'noop:a')
+    .del(sessionB?.partnerUserId ? `active-user:${sessionB.partnerUserId}` : 'noop:b')
+    .exec();
 };
 
-export const setLastSkipped = async (userId: string, matchedSocketId: string) => {
-  await redis.set(`rewind:${userId}`, matchedSocketId, 'EX', 3600);
-};
-
-export const getLastSkipped = async (userId: string) => {
-  return redis.get(`rewind:${userId}`);
-};
+export const getSocketForUser = async (userId: string) => redis.get(`active-user:${userId}`);

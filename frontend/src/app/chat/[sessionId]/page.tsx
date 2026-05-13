@@ -1,6 +1,8 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
+import 'adapterjs';
+import DOMPurify from 'dompurify';
 import { useSearchParams, useParams, useRouter } from 'next/navigation';
 import { useAuth } from '@/context/AuthContext';
 import { useSocket } from '@/context/SocketContext';
@@ -10,7 +12,7 @@ import { Button } from '@/components/Button';
 import { Badge } from '@/components/Badge';
 import { Tag } from '@/components/Tag';
 import { Modal } from '@/components/Modal';
-import { moderationApi } from '@/lib/api';
+import { userApi } from '@/lib/api';
 import styles from '../page.module.css';
 
 const ICE_SERVERS = {
@@ -21,11 +23,10 @@ const ICE_SERVERS = {
 };
 
 const REPORT_REASONS = [
-  "Inappropriate behavior",
-  "Harassment",
-  "Spam",
-  "Explicit content",
-  "Other"
+  { value: 'fake_profile', label: 'Fake profile' },
+  { value: 'harassment', label: 'Harassment' },
+  { value: 'inappropriate_content', label: 'Inappropriate content' },
+  { value: 'underage', label: 'Underage' },
 ];
 
 export default function ChatSessionPage() {
@@ -52,12 +53,14 @@ export default function ChatSessionPage() {
   const [messages, setMessages] = useState<{text: string, isSelf: boolean, id: number}[]>([]);
   const [chatInput, setChatInput] = useState('');
   const [isStarred, setIsStarred] = useState(false);
+  const [audioEnabled, setAudioEnabled] = useState(true);
+  const [videoEnabled, setVideoEnabled] = useState(true);
 
   // Modal States
   const [isMediaErrorModalOpen, setIsMediaErrorModalOpen] = useState(false);
   const [isBlockedModalOpen, setIsBlockedModalOpen] = useState(false);
   const [isReportModalOpen, setIsReportModalOpen] = useState(false);
-  const [reportReason, setReportReason] = useState(REPORT_REASONS[0]);
+  const [reportReason, setReportReason] = useState(REPORT_REASONS[0].value);
   const [isReporting, setIsReporting] = useState(false);
 
   // Partner Info
@@ -86,13 +89,30 @@ export default function ChatSessionPage() {
   const initMedia = async () => {
     try {
       setIsMediaErrorModalOpen(false);
-      const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
+        audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      });
       setLocalStream(stream);
       setStatus('Ready');
-    } catch (err) {
-      console.error(err);
+    } catch (err: any) {
+      if (err?.name === 'OverconstrainedError') {
+        try {
+          const fallback = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+          setLocalStream(fallback);
+          setStatus('Ready');
+          return;
+        } catch {
+          setStatus('Camera unavailable');
+        }
+      } else if (err?.name === 'NotAllowedError') {
+        setStatus('Grant camera permission');
+      } else if (err?.name === 'NotFoundError') {
+        setStatus('No camera detected');
+      } else {
+        setStatus('Camera unavailable');
+      }
       setIsMediaErrorModalOpen(true);
-      setStatus('Camera access denied');
     }
   };
 
@@ -132,39 +152,41 @@ export default function ChatSessionPage() {
 
     pc.onicecandidate = (event) => {
       if (event.candidate) {
-        socket.emit('signal:ice', { candidate: event.candidate });
+        socket.emit('webrtc:ice-candidate', { candidate: event.candidate });
       }
     };
 
     // Listeners for signaling
-    socket.on('signal:offer', async (data) => {
+    socket.on('webrtc:offer', async (data) => {
       await pc.setRemoteDescription(new RTCSessionDescription(data.offer));
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
-      socket.emit('signal:answer', { answer });
+      socket.emit('webrtc:answer', { answer });
     });
 
-    socket.on('signal:answer', async (data) => {
+    socket.on('webrtc:answer', async (data) => {
       await pc.setRemoteDescription(new RTCSessionDescription(data.answer));
     });
 
-    socket.on('signal:ice', async (data) => {
+    socket.on('webrtc:ice-candidate', async (data) => {
       if (data && data.candidate) {
         try {
           await pc.addIceCandidate(new RTCIceCandidate(data.candidate));
-        } catch (e) {
-          console.error('[WebRTC] Error adding ICE candidate', e);
+        } catch {
         }
       }
-      // Silently handle missing candidate (as requested)
     });
 
     // Chat listeners
     socket.on('chat:message', (data) => {
-      setMessages(prev => [...prev, { text: data.text, isSelf: false, id: Date.now() }]);
+      setMessages(prev => [...prev, {
+        text: DOMPurify.sanitize(data.content || data.text || ''),
+        isSelf: data.senderId === user?.id,
+        id: Date.now(),
+      }]);
     });
 
-    socket.on('chat:blocked', () => {
+    socket.on('chat:warning', () => {
       setIsBlockedModalOpen(true);
     });
 
@@ -192,26 +214,22 @@ export default function ChatSessionPage() {
       setRemoteStream(null);
     });
 
-    socket.on('session:summary', (summary) => {
-       console.log('Session Summary:', summary);
-    });
-
     // If I'm the caller, initiate the offer immediately
     if (role === 'caller') {
       const createOffer = async () => {
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
-        socket.emit('signal:offer', { offer });
+        socket.emit('webrtc:offer', { offer });
       };
       createOffer();
     }
 
     return () => {
-      socket.off('signal:offer');
-      socket.off('signal:answer');
-      socket.off('signal:ice');
+      socket.off('webrtc:offer');
+      socket.off('webrtc:answer');
+      socket.off('webrtc:ice-candidate');
       socket.off('chat:message');
-      socket.off('chat:blocked');
+      socket.off('chat:warning');
       socket.off('star:sent');
       socket.off('star:mutual');
       socket.off('session:partner-disconnected');
@@ -221,16 +239,31 @@ export default function ChatSessionPage() {
   }, [socket, isConnected, localStream, role]);
 
   const handleSkip = () => {
-    socket?.emit('session:end');
+    socket?.emit('chat:leave');
+    localStream?.getTracks().forEach(t => t.stop());
+    peerConnection.current?.close();
     router.push('/queue');
   };
 
   const handleSendMessage = (e: React.FormEvent) => {
     e.preventDefault();
     if (!chatInput.trim() || !socket || !isConnected) return;
-    socket.emit('chat:message', { text: chatInput });
-    setMessages(prev => [...prev, { text: chatInput, isSelf: true, id: Date.now() }]);
+    socket.emit('chat:message', { sessionId, content: chatInput });
     setChatInput('');
+  };
+
+  const toggleAudio = () => {
+    localStream?.getAudioTracks().forEach(track => {
+      track.enabled = !audioEnabled;
+    });
+    setAudioEnabled(!audioEnabled);
+  };
+
+  const toggleVideo = () => {
+    localStream?.getVideoTracks().forEach(track => {
+      track.enabled = !videoEnabled;
+    });
+    setVideoEnabled(!videoEnabled);
   };
 
   const handleStar = () => {
@@ -244,15 +277,16 @@ export default function ChatSessionPage() {
     setIsReporting(true);
     try {
       const reportedId = sessionStorage.getItem('partnerId');
-      await moderationApi.report({ 
+      if (!reportedId) throw new Error('Missing partner');
+      await userApi.report({ 
         reportedId,
         sessionId, 
         reason: reportReason 
       });
+      socket?.emit('chat:leave');
       setIsReportModalOpen(false);
-      // Optionally show a success toast here
+      router.push('/queue');
     } catch (err) {
-      console.error('Report failed:', err);
     } finally {
       setIsReporting(false);
     }
@@ -299,6 +333,12 @@ export default function ChatSessionPage() {
         <div className={styles.controls}>
           <Button variant="danger" onClick={handleSkip}>
             ⏭ SKIP
+          </Button>
+          <Button variant="ghost" onClick={toggleAudio}>
+            {audioEnabled ? 'Mute' : 'Unmute'}
+          </Button>
+          <Button variant="ghost" onClick={toggleVideo}>
+            {videoEnabled ? 'Stop Video' : 'Start Video'}
           </Button>
           {!isRevealed && status === 'Connected' && (
             <Button variant="ghost" onClick={() => setIsRevealed(true)}>
@@ -416,7 +456,7 @@ export default function ChatSessionPage() {
           </p>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
             {REPORT_REASONS.map(reason => (
-              <label key={reason} style={{ 
+              <label key={reason.value} style={{ 
                 display: 'flex', 
                 alignItems: 'center', 
                 gap: '1rem', 
@@ -424,16 +464,16 @@ export default function ChatSessionPage() {
                 backgroundColor: 'rgba(255,255,255,0.03)', 
                 borderRadius: '8px',
                 cursor: 'pointer',
-                border: reportReason === reason ? '1px solid var(--accent-primary)' : '1px solid transparent'
+                border: reportReason === reason.value ? '1px solid var(--accent-primary)' : '1px solid transparent'
               }}>
                 <input 
                   type="radio" 
                   name="reportReason" 
-                  value={reason} 
-                  checked={reportReason === reason}
+                  value={reason.value} 
+                  checked={reportReason === reason.value}
                   onChange={(e) => setReportReason(e.target.value)}
                 />
-                {reason}
+                {reason.label}
               </label>
             ))}
           </div>

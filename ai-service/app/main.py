@@ -1,56 +1,78 @@
 from fastapi import FastAPI
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import List
 import random
+import re
+
+try:
+    from better_profanity import profanity
+    profanity.load_censor_words()
+except Exception:
+    profanity = None
 
 app = FastAPI(title="CuziCam AI Service")
 
-class ToxicityRequest(BaseModel):
-    text: str
+
+class ModerationRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=1000)
+
 
 class IcebreakerRequest(BaseModel):
     interests_a: List[str]
     interests_b: List[str]
 
-# Mock Toxicity Model (MVP)
-# In production, use HuggingFace (e.g. unitary/toxic-bert) or OpenAI Moderation API
-@app.post("/toxicity")
-async def check_toxicity(req: ToxicityRequest):
-    text = req.text.lower()
-    toxic_words = ['hate', 'kill', 'stupid', 'ugly', 'die', 'bitch']
-    
-    score = 0.0
-    for word in toxic_words:
-        if word in text:
-            score += 0.3
-            
-    # Cap score at 1.0
-    score = min(score, 1.0)
-    
-    return {"score": score}
 
-# Mock Icebreaker Generator (MVP)
-# In production, use an LLM (e.g. OpenAI GPT-4o-mini or local Llama)
+STATIC_ICEBREAKERS = [
+    "What is the best thing that happened on campus this week?",
+    "What class has surprised you the most?",
+    "What is your current favorite study spot?",
+    "What is one app you could not survive college without?",
+    "What is a small campus tradition you like?",
+    "What is your go-to late night snack?",
+    "What is the most useful thing you learned this semester?",
+    "What is a song you have had on repeat lately?",
+    "What is one club you would recommend joining?",
+    "What is your ideal weekend plan?",
+    "What is a movie you can rewatch anytime?",
+    "What is the most underrated place near campus?",
+    "What is one skill you want to learn this year?",
+    "What is a harmless hot take you stand by?",
+    "What is your favorite way to reset after exams?",
+    "What is the best advice you got as a student?",
+    "What is a project you want to build someday?",
+    "What is one thing you wish freshmen knew?",
+    "What is your favorite campus memory so far?",
+    "What is a topic you could talk about for hours?",
+]
+
+TOXIC_PATTERNS = [
+    re.compile(r"\b(kill yourself|kys|go die)\b", re.IGNORECASE),
+    re.compile(r"\b(slur|hate you|worthless)\b", re.IGNORECASE),
+]
+
+
+@app.post("/moderate")
+async def moderate(req: ModerationRequest):
+    message = req.message
+    matched_pattern = any(pattern.search(message) for pattern in TOXIC_PATTERNS)
+    profanity_hit = bool(profanity and profanity.contains_profanity(message))
+    is_toxic = matched_pattern or profanity_hit
+    confidence = 0.92 if matched_pattern else 0.85 if profanity_hit else 0.05
+    return {"is_toxic": is_toxic, "confidence": confidence}
+
+
 @app.post("/icebreaker")
 async def generate_icebreaker(req: IcebreakerRequest):
-    shared = set(req.interests_a).intersection(req.interests_b)
-    
+    normalized_a = {interest.strip() for interest in req.interests_a if interest.strip()}
+    normalized_b = {interest.strip() for interest in req.interests_b if interest.strip()}
+    shared = sorted(normalized_a.intersection(normalized_b))
+
     if shared:
-        interest = list(shared)[0]
-        prompts = [
-            f"Since you both like {interest}, what's your favorite thing about it? 💬",
-            f"A hot take on {interest} — go! 🔥",
-            f"If you could do one thing related to {interest} right now, what would it be? 🌟"
-        ]
-        return {"icebreaker": random.choice(prompts)}
-    else:
-        prompts = [
-            "If you could drop everything and travel anywhere right now, where would it be? ✈️",
-            "What's the most random fact you know? 🤔",
-            "What's your most unpopular opinion? 🌶️",
-            "If you had to teach a class on any subject, what would it be? 📚"
-        ]
-        return {"icebreaker": random.choice(prompts)}
+        interest = shared[0]
+        return {"icebreaker": f"You both like {interest}. What got you into it?"}
+
+    return {"icebreaker": random.choice(STATIC_ICEBREAKERS)}
+
 
 @app.get("/health")
 async def health_check():

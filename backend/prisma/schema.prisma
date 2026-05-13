@@ -40,6 +40,7 @@ model User {
   gender          String?   // Changed from Gender enum to String for SQLite
   role            String    @default("USER") // Changed from Role enum to String for SQLite
   vibeScore       Float     @default(5.0) // 0-10 reputation score
+  onboardingComplete Boolean @default(false)
   isVerified      Boolean   @default(false)
   isEmailVerified Boolean   @default(false)
   isBanned        Boolean   @default(false)
@@ -63,6 +64,7 @@ model User {
   connections     Connection[]   @relation("ConnectionUserA")
   connectedWith   Connection[]   @relation("ConnectionUserB")
   confessions     Confession[]
+  confessionUpvotes ConfessionUpvote[]
   reports         Report[]       @relation("Reporter")
   reportedIn      Report[]       @relation("Reported")
   blocks          Block[]        @relation("Blocker")
@@ -153,8 +155,23 @@ model Confession {
 
   authorId    String?  // Nullable for true anonymity, but track for moderation
   author      User?    @relation(fields: [authorId], references: [id])
+  upvotedBy   ConfessionUpvote[]
 
   @@index([collegeId, createdAt])
+}
+
+model ConfessionUpvote {
+  id           String   @id @default(uuid())
+  createdAt    DateTime @default(now())
+
+  confessionId String
+  confession   Confession @relation(fields: [confessionId], references: [id], onDelete: Cascade)
+
+  userId       String
+  user         User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([confessionId, userId])
+  @@index([userId])
 }
 
 // ──────────────────────────────────────────────────────────────

@@ -40,15 +40,31 @@ export const updateProfile = async (userId: string, data: {
   interests?: string[];
   gender?: string;
   avatarUrl?: string;
+  collegeId?: string;
+  college?: string;
 }) => {
   const updateData: any = { ...data };
+  delete updateData.college;
   if (data.interests) {
     updateData.interests = JSON.stringify(data.interests);
+  }
+  if (data.college && !data.collegeId) {
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { email: true } });
+    const domain = user?.email.split('@')[1]?.toLowerCase();
+    if (domain) {
+      const college = await prisma.college.upsert({
+        where: { domain },
+        update: { name: data.college },
+        create: { name: data.college, domain },
+      });
+      updateData.collegeId = college.id;
+    }
   }
 
   const user = await prisma.user.update({
     where: { id: userId },
     data: updateData,
+    include: { college: { select: { id: true, name: true, domain: true } } },
   });
 
   return {
@@ -113,21 +129,38 @@ export const getLeaderboard = async () => {
 };
 
 export const completeOnboarding = async (userId: string, data: {
-  collegeId: string;
+  collegeId?: string;
+  college?: string;
   year?: string;
   branch?: string;
   interests: string[];
   bio?: string;
 }) => {
+  let collegeId = data.collegeId;
+  if (!collegeId && data.college) {
+    const user = await prisma.user.findUnique({ where: { id: userId }, select: { email: true } });
+    const domain = user?.email.split('@')[1]?.toLowerCase();
+    if (!domain) throw new Error('Unable to infer college domain.');
+    const college = await prisma.college.upsert({
+      where: { domain },
+      update: { name: data.college },
+      create: { name: data.college, domain },
+    });
+    collegeId = college.id;
+  }
+  if (!collegeId) throw new Error('College is required.');
+
   const updatedUser = await prisma.user.update({
     where: { id: userId },
     data: {
-      collegeId: data.collegeId,
+      collegeId,
       year: data.year,
       branch: data.branch,
       interests: JSON.stringify(data.interests),
       bio: data.bio,
+      onboardingComplete: true,
     },
+    include: { college: { select: { id: true, name: true, domain: true } } },
   });
 
   return { 

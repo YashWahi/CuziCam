@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth.middleware';
 import * as userService from '../services/user.service';
+import { prisma } from '../lib/prisma';
 
 export const getProfile = async (req: AuthRequest, res: Response) => {
   try {
@@ -14,6 +15,8 @@ export const getProfile = async (req: AuthRequest, res: Response) => {
   }
 };
 
+export const getMe = getProfile;
+
 export const updateProfile = async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
@@ -21,6 +24,78 @@ export const updateProfile = async (req: AuthRequest, res: Response) => {
 
     const profile = await userService.updateProfile(userId, req.body);
     res.json(profile);
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
+};
+
+export const blockUser = async (req: AuthRequest, res: Response) => {
+  try {
+    const blockerId = req.user?.userId;
+    const { blockedId } = req.body;
+    if (!blockerId) return res.status(401).json({ error: 'Unauthorized' });
+    if (blockerId === blockedId) return res.status(400).json({ error: 'Cannot block yourself' });
+
+    await prisma.$transaction([
+      prisma.block.upsert({
+        where: { blockerId_blockedId: { blockerId, blockedId } },
+        update: {},
+        create: { blockerId, blockedId },
+      }),
+      prisma.block.upsert({
+        where: { blockerId_blockedId: { blockerId: blockedId, blockedId: blockerId } },
+        update: {},
+        create: { blockerId: blockedId, blockedId: blockerId },
+      }),
+    ]);
+
+    res.status(201).json({ success: true });
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
+};
+
+export const getBlocks = async (req: AuthRequest, res: Response) => {
+  try {
+    const userId = req.user?.userId;
+    if (!userId) return res.status(401).json({ error: 'Unauthorized' });
+    const blocks = await prisma.block.findMany({
+      where: { blockerId: userId },
+      select: { blockedId: true },
+    });
+    res.json(blocks.map((block) => block.blockedId));
+  } catch (error: any) {
+    res.status(400).json({ error: error.message });
+  }
+};
+
+export const reportUser = async (req: AuthRequest, res: Response) => {
+  try {
+    const reporterId = req.user?.userId;
+    const { reportedId, reason, sessionId } = req.body;
+    if (!reporterId) return res.status(401).json({ error: 'Unauthorized' });
+    if (reporterId === reportedId) return res.status(400).json({ error: 'Cannot report yourself' });
+
+    const report = await prisma.$transaction(async (tx) => {
+      const createdReport = await tx.report.create({
+        data: { reporterId, reportedId, reason, sessionId, status: 'PENDING' },
+      });
+
+      await tx.block.upsert({
+        where: { blockerId_blockedId: { blockerId: reporterId, blockedId: reportedId } },
+        update: {},
+        create: { blockerId: reporterId, blockedId: reportedId },
+      });
+      await tx.block.upsert({
+        where: { blockerId_blockedId: { blockerId: reportedId, blockedId: reporterId } },
+        update: {},
+        create: { blockerId: reportedId, blockedId: reporterId },
+      });
+
+      return createdReport;
+    });
+
+    res.status(201).json(report);
   } catch (error: any) {
     res.status(400).json({ error: error.message });
   }

@@ -7,7 +7,6 @@ import cookieParser from 'cookie-parser';
 import { prisma } from './lib/prisma';
 import { registerSocketHandlers } from './sockets/chat.socket';
 import { startChaosWindowScheduler } from './utils/chaosWindow.scheduler';
-import { startCampusPulseScheduler } from './utils/campusPulse.scheduler';
 import { connectRedis } from './lib/redis';
 
 // Routes
@@ -16,6 +15,7 @@ import profileRoutes from './routes/user.routes';
 import confessionRoutes from './routes/confession.routes';
 import moderationRoutes from './routes/moderation.routes';
 import chaosRoutes from './routes/chaos.routes';
+import adminRoutes from './routes/admin.routes';
 import * as authController from './controllers/auth.controller';
 
 dotenv.config();
@@ -35,6 +35,7 @@ const io = new Server(server, {
     credentials: true,
   }
 });
+app.set('io', io);
 
 // Middleware
 app.use(cors({ origin: ALLOWED_ORIGINS, credentials: true }));
@@ -62,6 +63,8 @@ apiV1.use('/users', profileRoutes);
 apiV1.use('/confessions', confessionRoutes);
 apiV1.use('/moderation', moderationRoutes);
 apiV1.use('/chaos', chaosRoutes);
+apiV1.use('/matchmaking', chaosRoutes);
+apiV1.use('/admin', adminRoutes);
 
 app.use('/api/v1', apiV1);
 
@@ -79,9 +82,8 @@ const initialize = async () => {
     // 3. Handlers & Schedulers
     registerSocketHandlers(io);
     startChaosWindowScheduler();
-    startCampusPulseScheduler();
 
-    const PORT = process.env.PORT || 4000;
+    const PORT = process.env.PORT || 3001;
     server.listen(PORT, () => {
       console.log(`[Server] Backend running on http://localhost:${PORT}`);
     });

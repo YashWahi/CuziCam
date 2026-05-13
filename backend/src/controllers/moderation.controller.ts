@@ -1,6 +1,7 @@
 import { Response } from 'express';
 import { AuthRequest } from '../middleware/auth.middleware';
 import { prisma } from '../lib/prisma';
+import { getSocketForUser } from '../services/matchmaking.service';
 
 export const getAllReports = async (req: AuthRequest, res: Response) => {
   try {
@@ -27,6 +28,13 @@ export const banUser = async (req: AuthRequest, res: Response) => {
       where: { id: userId },
       data: { isBanned: true }
     });
+
+    const io = req.app.get('io');
+    const socketId = await getSocketForUser(userId);
+    if (io && socketId) {
+      io.to(socketId).emit('account:banned');
+      io.sockets.sockets.get(socketId)?.disconnect(true);
+    }
 
     res.json({ message: `User ${userId} has been banned.` });
   } catch (error: any) {
