@@ -1,13 +1,14 @@
 import express from 'express';
 import http from 'http';
 import { Server } from 'socket.io';
-import cors from 'cors';
+import cors, { CorsOptions } from 'cors';
 import dotenv from 'dotenv';
 import cookieParser from 'cookie-parser';
 import { prisma } from './lib/prisma';
 import { registerSocketHandlers } from './sockets/chat.socket';
 import { startChaosWindowScheduler } from './utils/chaosWindow.scheduler';
 import { connectRedis } from './lib/redis';
+import { getAllowedOrigins, isOriginAllowed } from './lib/cors-origins';
 
 // Routes
 import authRoutes from './routes/auth.routes';
@@ -23,28 +24,43 @@ dotenv.config();
 const app = express();
 const server = http.createServer(app);
 
-// CHUNK H — CORS production fix
-const allowedOrigins = [
-  process.env.FRONTEND_URL,
-  'http://localhost:3000',
-].filter(Boolean) as string[];
+// Render terminates TLS at the edge; required for secure cookies + correct client IP
+app.set('trust proxy', 1);
 
-app.use(cors({
-  origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin)) callback(null, true);
-    else callback(new Error('Not allowed by CORS'));
+const allowedOrigins = getAllowedOrigins();
+
+if (process.env.NODE_ENV === 'production' && allowedOrigins.length === 0) {
+  console.warn(
+    '[CORS] No FRONTEND_URL or CORS_ORIGINS set — browser requests from your deployed frontend will be blocked.',
+  );
+} else {
+  console.log('[CORS] Allowed origins:', allowedOrigins.join(', '));
+}
+
+const corsOptions: CorsOptions = {
+  origin(origin, callback) {
+    if (isOriginAllowed(origin, allowedOrigins)) {
+      callback(null, true);
+    } else {
+      console.warn(
+        `[CORS] Blocked origin: ${origin ?? '(none)'}. Allowed: ${allowedOrigins.join(', ') || '(none configured)'}`,
+      );
+      callback(new Error('Not allowed by CORS'));
+    }
   },
   credentials: true,
   methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization'],
-}));
+};
+
+app.use(cors(corsOptions));
 
 const io = new Server(server, {
   cors: {
-    origin: allowedOrigins,
+    origin: allowedOrigins.length > 0 ? allowedOrigins : false,
     credentials: true,
-    methods: ['GET', 'POST'],
-  }
+    methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
+  },
 });
 app.set('io', io);
 

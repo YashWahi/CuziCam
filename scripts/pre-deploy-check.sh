@@ -29,9 +29,11 @@ check "No hardcoded JWT secrets" \
 check "Prisma using postgresql provider" \
   "grep -q 'provider = \"postgresql\"' backend/prisma/schema.prisma"
 
-# CORS uses env var
-check "CORS uses FRONTEND_URL env var" \
-  "grep -q 'FRONTEND_URL' backend/src/index.ts"
+# CORS uses env-driven allow list
+check "CORS allow-list helper exists" \
+  "test -f backend/src/lib/cors-origins.ts"
+check "CORS reads FRONTEND_URL from env" \
+  "grep -q 'FRONTEND_URL' backend/src/lib/cors-origins.ts"
 
 # AI service snake_case
 check "AI service uses snake_case fields" \
