@@ -24,8 +24,8 @@ export default function SignUpPage() {
     e.preventDefault();
     setError('');
 
-    if (!email.toLowerCase().endsWith('.edu')) {
-      setError('Please use a valid college (.edu) email.');
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setError('Please use a valid email address.');
       return;
     }
 
@@ -121,7 +121,7 @@ export default function SignUpPage() {
             <Input
               label="College Email"
               type="email"
-              placeholder="you@college.edu"
+              placeholder="you@example.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               fullWidth
@@ -149,7 +149,7 @@ export default function SignUpPage() {
               ))}
             </div>
             <p className={styles.helperText} style={{ marginTop: '-0.75rem', marginBottom: '1rem', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-              Must be .edu or college domain
+              Any valid email works.
             </p>
 
             <Input

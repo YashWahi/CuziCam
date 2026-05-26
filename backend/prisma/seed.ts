@@ -9,7 +9,7 @@ async function main() {
     { name: 'Indian Institute of Technology Bombay', domain: 'iitb.ac.in', city: 'Mumbai', country: 'India' },
     { name: 'Delhi University', domain: 'du.ac.in', city: 'Delhi', country: 'India' },
     { name: 'BITS Pilani', domain: 'bits-pilani.ac.in', city: 'Pilani', country: 'India' },
-    { name: 'Massachusetts Institute of Technology', domain: 'mit.edu', city: 'Cambridge', country: 'USA' },
+    { name: 'Massachusetts Institute of Technology', domain: 'mit.example', city: 'Cambridge', country: 'USA' },
   ]
 
   for (const c of colleges) {

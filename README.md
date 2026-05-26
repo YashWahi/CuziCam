@@ -4,7 +4,7 @@ CuziCam is a real-time anonymous video and text chat platform designed exclusive
 
 ## 🚀 Key Features
 
-*   **Verified Community**: Only `.edu` email holders can join.
+*   **Verified Community**: Account verification and onboarding keep the community accountable.
 *   **AI Vibe Matching**: Matches based on shared interests, department, and conversation quality.
 *   **Real-Time Video**: Low-latency WebRTC streams with Socket.io signaling.
 *   **Anonymous Confessions**: A college-specific board for students to share thoughts.
@@ -45,7 +45,7 @@ CuziCam is a real-time anonymous video and text chat platform designed exclusive
     ```bash
     cd ai-service
     pip install -r requirements.txt
-    uvicorn app.main:app --port 8000 --reload
+    python -m uvicorn app.main:app --port 8000 --reload
     ```
 
 4.  **Frontend Setup**

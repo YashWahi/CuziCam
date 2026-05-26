@@ -109,7 +109,7 @@ export default function OnboardingPage() {
         collegeId: formData.collegeId,
         year: formData.year,
         branch: formData.branch,
-        interests: Array.isArray(formData.interests) ? formData.interests : JSON.parse(formData.interests),
+        interests: formData.interests,
         bio: formData.bio,
         preferences: formData.preferences
       }) as any;

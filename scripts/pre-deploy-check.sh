@@ -17,9 +17,9 @@ check() {
 check "No 'token' cookie (must be accessToken)" \
   "! grep -r \"cookie('token'\" backend/src"
 
-# .edu restriction removed
-check "No .edu email restriction" \
-  "! grep -r '\.edu' backend/src/schemas frontend/src"
+# Institutional-domain email restriction removed
+check "No institutional-domain email restriction" \
+  "! grep -r 'endsWith' backend/src/schemas frontend/src"
 
 # No hardcoded JWT secrets
 check "No hardcoded JWT secrets" \

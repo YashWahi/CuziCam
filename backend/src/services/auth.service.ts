@@ -5,8 +5,8 @@ import crypto from 'crypto';
 import { redis } from '../lib/redis';
 import emailService from './email.service';
 
-export const isValidEduEmail = async (email: string): Promise<boolean> => {
-  return email.toLowerCase().endsWith('.edu');
+export const isValidEmail = (email: string): boolean => {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 };
 
 const getOrCreateCollege = async (email: string, collegeName: string) => {
@@ -28,7 +28,7 @@ export const publicUser = (user: any) => ({
   role: user.role,
   collegeId: user.collegeId,
   college: user.college ? { id: user.college.id, name: user.college.name, domain: user.college.domain } : null,
-  interests: user.interests ? JSON.parse(user.interests) : [],
+  interests: Array.isArray(user.interests) ? user.interests : [],
   onboardingComplete: user.onboardingComplete,
   isVerified: user.isVerified,
   isEmailVerified: user.isEmailVerified,
@@ -42,8 +42,8 @@ export const registerWithEmail = async (data: {
   gender: 'male' | 'female';
   college: string;
 }) => {
-  if (!(await isValidEduEmail(data.email))) {
-    throw new Error('Please use a valid .edu college email address.');
+  if (!isValidEmail(data.email)) {
+    throw new Error('Please use a valid email address.');
   }
 
   const existing = await prisma.user.findUnique({ where: { email: data.email } });
@@ -59,7 +59,7 @@ export const registerWithEmail = async (data: {
       passwordHash,
       gender: data.gender,
       collegeId: college.id,
-      interests: JSON.stringify([]),
+      interests: [],
     },
     include: { college: true },
   });
@@ -149,8 +149,8 @@ export const googleOAuthLogin = async (data: {
   avatarUrl?: string;
   collegeId?: string;
 }) => {
-  if (!(await isValidEduEmail(data.email))) {
-    throw new Error('Please use a valid .edu college email address.');
+  if (!isValidEmail(data.email)) {
+    throw new Error('Please use a valid email address.');
   }
 
   let user = await prisma.user.findFirst({

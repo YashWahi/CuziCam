@@ -43,7 +43,7 @@ enum UserRole {
 model College {
   id          String   @id @default(uuid())
   name        String
-  domain      String   @unique // e.g. "mit.edu"
+  domain      String   @unique // e.g. "gmail.com"
   city        String?
   country     String   @default("India")
   createdAt   DateTime @default(now())

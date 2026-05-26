@@ -57,7 +57,7 @@ export const registerSocketHandlers = (io: Server) => {
         collegeId: user.collegeId || '',
         collegeName: user.college?.name || 'College',
         name: user.name,
-        interests: user.interests ? JSON.parse(user.interests) : [],
+        interests: user.interests || [],
         gender: user.gender,
         joinedAt: Date.now(),
       };

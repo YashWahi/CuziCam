@@ -117,7 +117,7 @@ export default function SignInPage() {
             <Input
               label="College Email"
               type="email"
-              placeholder="you@college.edu"
+              placeholder="you@example.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               fullWidth

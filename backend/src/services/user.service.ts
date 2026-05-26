@@ -28,7 +28,7 @@ export const getUserProfile = async (userId: string) => {
 
   return {
     ...user,
-    interests: user.interests ? JSON.parse(user.interests) : [],
+    interests: user.interests || [],
   };
 };
 
@@ -45,9 +45,6 @@ export const updateProfile = async (userId: string, data: {
 }) => {
   const updateData: any = { ...data };
   delete updateData.college;
-  if (data.interests) {
-    updateData.interests = JSON.stringify(data.interests);
-  }
   if (data.college && !data.collegeId) {
     const user = await prisma.user.findUnique({ where: { id: userId }, select: { email: true } });
     const domain = user?.email.split('@')[1]?.toLowerCase();
@@ -69,7 +66,7 @@ export const updateProfile = async (userId: string, data: {
 
   return {
     ...user,
-    interests: user.interests ? JSON.parse(user.interests) : [],
+    interests: user.interests || [],
   };
 };
 
@@ -156,7 +153,7 @@ export const completeOnboarding = async (userId: string, data: {
       collegeId,
       year: data.year,
       branch: data.branch,
-      interests: JSON.stringify(data.interests),
+      interests: data.interests,
       bio: data.bio,
       onboardingComplete: true,
     },
@@ -165,7 +162,7 @@ export const completeOnboarding = async (userId: string, data: {
 
   return { 
     ...updatedUser, 
-    interests: updatedUser.interests ? JSON.parse(updatedUser.interests) : [] 
+    interests: updatedUser.interests || [] 
   };
 };
 

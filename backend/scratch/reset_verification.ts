@@ -4,7 +4,7 @@ const prisma = new PrismaClient()
 async function main() {
   const result = await prisma.user.updateMany({
     where: {
-      email: { in: ['test@mit.edu', 'test2@mit.edu'] }
+      email: { in: ['test@example.com', 'test2@example.com'] }
     },
     data: { isEmailVerified: false }
   })
