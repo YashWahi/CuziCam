@@ -1,9 +1,28 @@
-# Render Blueprint — CuziCam AI microservice
-# Dashboard → Blueprints → connect this repo, OR set commands manually (see ai-service/RENDER.md).
-#
-# If Build Command is still the backend npm line, ai-service/package.json bridges it until you fix the dashboard.
+# Render Blueprint — set env var values in the Render dashboard after sync.
+# See backend/DEPLOY.md for CORS / cookie requirements.
 
 services:
+  - type: web
+    name: cuzicam-backend
+    runtime: node
+    rootDir: backend
+    buildCommand: npm install && npx prisma generate && npm run build
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: FRONTEND_URL
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: REDIS_URL
+        sync: false
+      - key: JWT_SECRET
+        sync: false
+      - key: JWT_REFRESH_SECRET
+        sync: false
+
   - type: web
     name: cuzicam-ai-service
     runtime: python

@@ -55,6 +55,21 @@ CuziCam is a real-time anonymous video and text chat platform designed exclusive
     npm run dev
     ```
 
+## ☁️ Render deployment (production)
+
+**Backend** (`cuzicam-backend-a484.onrender.com`):
+
+1. Set `NODE_ENV=production` and `FRONTEND_URL` to your **exact** frontend URL (e.g. `https://cuzicam-frontend.onrender.com`).
+2. Redeploy after changing CORS env vars — see [backend/DEPLOY.md](backend/DEPLOY.md).
+3. Startup log should include `[CORS] Allowed origins: ...` with your frontend URL.
+
+**Frontend** (Render or Vercel):
+
+```env
+NEXT_PUBLIC_BACKEND_URL=https://cuzicam-backend-a484.onrender.com
+NEXT_PUBLIC_SOCKET_URL=https://cuzicam-backend-a484.onrender.com
+```
+
 ## 🛡 Security & Moderation
 
 *   **JWT Authentication**: Secure user sessions with access/refresh tokens.

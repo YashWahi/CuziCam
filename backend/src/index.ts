@@ -8,7 +8,7 @@ import { prisma } from './lib/prisma';
 import { registerSocketHandlers } from './sockets/chat.socket';
 import { startChaosWindowScheduler } from './utils/chaosWindow.scheduler';
 import { connectRedis } from './lib/redis';
-import { getAllowedOrigins, isOriginAllowed } from './lib/cors-origins';
+import { getAllowedOrigins, resolveCorsOrigin } from './lib/cors-origins';
 
 // Routes
 import authRoutes from './routes/auth.routes';
@@ -39,8 +39,9 @@ if (process.env.NODE_ENV === 'production' && allowedOrigins.length === 0) {
 
 const corsOptions: CorsOptions = {
   origin(origin, callback) {
-    if (isOriginAllowed(origin, allowedOrigins)) {
-      callback(null, true);
+    const resolved = resolveCorsOrigin(origin, allowedOrigins);
+    if (resolved !== false) {
+      callback(null, resolved);
     } else {
       console.warn(
         `[CORS] Blocked origin: ${origin ?? '(none)'}. Allowed: ${allowedOrigins.join(', ') || '(none configured)'}`,

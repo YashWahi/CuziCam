@@ -33,7 +33,12 @@ export function getAllowedOrigins(): string[] {
   return [...new Set(origins)];
 }
 
-export function isOriginAllowed(origin: string | undefined, allowedOrigins: string[]): boolean {
+/** Returns the normalized origin to echo in ACAO, `true` for no Origin header, or `false` if blocked. */
+export function resolveCorsOrigin(
+  origin: string | undefined,
+  allowedOrigins: string[],
+): string | boolean {
   if (!origin) return true;
-  return allowedOrigins.includes(normalizeOrigin(origin));
+  const normalized = normalizeOrigin(origin);
+  return allowedOrigins.includes(normalized) ? normalized : false;
 }
