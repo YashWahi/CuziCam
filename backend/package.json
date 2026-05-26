@@ -3,6 +3,10 @@
   "version": "1.0.0",
   "description": "Backend for CuziCam",
   "main": "dist/index.js",
+  "engines": {
+    "node": "20.x",
+    "npm": ">=10"
+  },
   "scripts": {
     "dev": "nodemon src/index.ts",
     "build": "npx tsc",
