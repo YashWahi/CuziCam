@@ -1,0 +1,19 @@
+# Render Blueprint — CuziCam AI microservice
+# Apply via Dashboard → Blueprints, or copy settings into an existing Web Service.
+#
+# Backend and frontend are separate Render services; only ai-service is defined here.
+
+services:
+  - type: web
+    name: cuzicam-ai-service
+    runtime: python
+    rootDir: ai-service
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.11.9"
+      - key: SHARED_SECRET
+        sync: false
