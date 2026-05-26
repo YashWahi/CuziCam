@@ -1,7 +1,7 @@
 # Render Blueprint — CuziCam AI microservice
-# Apply via Dashboard → Blueprints, or copy settings into an existing Web Service.
+# Dashboard → Blueprints → connect this repo, OR set commands manually (see ai-service/RENDER.md).
 #
-# Backend and frontend are separate Render services; only ai-service is defined here.
+# If Build Command is still the backend npm line, ai-service/package.json bridges it until you fix the dashboard.
 
 services:
   - type: web
@@ -10,7 +10,7 @@ services:
     rootDir: ai-service
     plan: free
     buildCommand: pip install -r requirements.txt
-    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    startCommand: python -m uvicorn app.main:app --host 0.0.0.0 --port $PORT
     healthCheckPath: /health
     envVars:
       - key: PYTHON_VERSION

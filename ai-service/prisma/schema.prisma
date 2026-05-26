@@ -1,0 +1,13 @@
+// Minimal schema so `npx prisma generate` succeeds when Render runs the backend build command.
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = "file:./render-build.db"
+}
+
+model RenderBuildPlaceholder {
+  id Int @id @default(autoincrement())
+}

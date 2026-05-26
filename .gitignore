@@ -4,9 +4,14 @@ backend/node_modules/
 frontend/node_modules/
 ai-service/__pycache__/
 ai-service/.venv/
+ai-service/node_modules/
+ai-service/prisma/*.db
+ai-service/prisma/*.db-journal
 
 # Build outputs
 dist/
+!ai-service/dist/
+!ai-service/dist/index.js
 build/
 .next/
 out/
