@@ -45,7 +45,7 @@ export const Sidebar = () => {
               {user?.name || 'User'}
             </p>
             <p className="mono" style={{ fontSize: '0.65rem', color: 'var(--text-muted)' }}>
-              {(typeof user?.college === 'object' ? user.college?.name : user?.college) || '.edu verified'}
+              {(typeof user?.college === 'object' ? user.college?.name : user?.college) || 'verified'}
             </p>
           </div>
         </div>

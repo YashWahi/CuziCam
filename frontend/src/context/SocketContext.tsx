@@ -3,6 +3,7 @@
 import React, { createContext, useContext, useEffect, useState, ReactNode } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { useAuth } from './AuthContext';
+import Cookies from 'js-cookie';
 
 interface SocketContextType {
   socket: Socket | null;
@@ -30,7 +31,7 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
       return;
     }
 
-    const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:4000';
+    const socketUrl = process.env.NEXT_PUBLIC_SOCKET_URL || 'http://localhost:3001';
     const newSocket = io(socketUrl, {
       withCredentials: true,
       autoConnect: true,
@@ -38,9 +39,7 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
 
     newSocket.on('connect', () => {
       setIsConnected(true);
-      console.log('[Socket] Connected to server');
-      
-      const token = localStorage.getItem('cuzicam_token');
+      const token = Cookies.get('accessToken');
       if (token) {
         newSocket.emit('authenticate', token);
       }
@@ -48,7 +47,6 @@ export const SocketProvider = ({ children }: { children: ReactNode }) => {
 
     newSocket.on('disconnect', () => {
       setIsConnected(false);
-      console.log('[Socket] Disconnected from server');
     });
 
     setSocket(newSocket);

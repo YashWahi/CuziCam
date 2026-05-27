@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
+import DOMPurify from 'dompurify';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useAuth } from '@/context/AuthContext';
 import { confessionsApi } from '@/lib/api';
@@ -54,9 +55,8 @@ export default function ConfessionsPage() {
       const response = await confessionsApi.getAll({ 
         sort: activeCategory === 'Trending' ? 'trending' : 'new' 
       });
-      setConfessions((response as any).data || response);
-    } catch (err) {
-      console.error('Failed to fetch confessions', err);
+      setConfessions((response as any).items || (response as any).data || response);
+    } catch {
       setError('Failed to load confessions. Try again later.');
     } finally {
       setIsLoading(false);
@@ -76,6 +76,7 @@ export default function ConfessionsPage() {
     try {
       const response = await confessionsApi.create({
         content: newConfession,
+        isAnonymous: true,
       });
       
       const newConf = (response as any).data || response;
@@ -90,15 +91,13 @@ export default function ConfessionsPage() {
 
   const handleUpvote = async (id: string) => {
     try {
-      await confessionsApi.like(id);
+      const updated: any = await confessionsApi.like(id);
       setConfessions(prev => prev.map(c => 
-        c.id === id ? { ...c, upvotes: c.upvotes + 1 } : c
+        c.id === id ? { ...c, upvotes: updated?.upvotes ?? c.upvotes } : c
       ));
     } catch (err: any) {
       if (err.response?.status === 403) {
         showToast("You've already upvoted this 🔥");
-      } else {
-        console.error('Failed to upvote', err);
       }
     }
   };
@@ -183,7 +182,7 @@ export default function ConfessionsPage() {
                     layout
                   >
                     <div className={styles.cardContent}>
-                      {c.content}
+                      {DOMPurify.sanitize(c.content)}
                     </div>
                     <div className={styles.cardFooter}>
                       <div className={styles.voteGroup}>

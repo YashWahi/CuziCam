@@ -2,19 +2,35 @@ import axios from 'axios';
 
 const AI_SERVICE_URL = process.env.AI_SERVICE_URL || 'http://localhost:8000';
 
-export const checkToxicity = async (text: string): Promise<number> => {
+// CHUNK I — shared secret header for all AI service requests
+const aiHeaders = {
+  'Content-Type': 'application/json',
+  'x-internal-secret': process.env.AI_SHARED_SECRET || '',
+};
+
+export const checkToxicity = async (message: string): Promise<{ isToxic: boolean; confidence: number }> => {
   try {
-    const response = await axios.post(`${AI_SERVICE_URL}/toxicity`, { text });
-    return (response.data as any).score;
+    const response = await axios.post(`${AI_SERVICE_URL}/moderate`, { message }, { headers: aiHeaders });
+    return {
+      isToxic: Boolean((response.data as any).is_toxic),
+      confidence: Number((response.data as any).confidence || 0),
+    };
   } catch (error) {
-    console.error('[AI Service] Toxicity check failed, falling back to 0');
-    return 0;
+    return { isToxic: false, confidence: 0 };
   }
 };
 
+// CHUNK D — snake_case field names match the Pydantic model exactly
 export const getIcebreaker = async (interestsA: string[], interestsB: string[]): Promise<string> => {
   try {
-    const response = await axios.post(`${AI_SERVICE_URL}/icebreaker`, { interestsA, interestsB });
+    const response = await axios.post(
+      `${AI_SERVICE_URL}/icebreaker`,
+      {
+        interests_a: interestsA,
+        interests_b: interestsB,
+      },
+      { headers: aiHeaders }
+    );
     return (response.data as any).icebreaker;
   } catch (error) {
     const fallbacks = [

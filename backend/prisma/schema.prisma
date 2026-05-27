@@ -6,8 +6,35 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
-  url      = "file:./dev.db"
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ──────────────────────────────────────────────────────────────
+// ENUMS
+// ──────────────────────────────────────────────────────────────
+
+enum Gender {
+  MALE
+  FEMALE
+}
+
+enum ReportReason {
+  FAKE_PROFILE
+  HARASSMENT
+  INAPPROPRIATE_CONTENT
+  UNDERAGE
+}
+
+enum ReportStatus {
+  PENDING
+  RESOLVED
+  DISMISSED
+}
+
+enum UserRole {
+  USER
+  ADMIN
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -16,7 +43,7 @@ datasource db {
 model College {
   id          String   @id @default(uuid())
   name        String
-  domain      String   @unique // e.g. "mit.edu"
+  domain      String   @unique // e.g. "gmail.com"
   city        String?
   country     String   @default("India")
   createdAt   DateTime @default(now())
@@ -36,10 +63,11 @@ model User {
   bio             String?
   year            String?   // e.g. "2nd Year"
   branch          String?   // e.g. "CSE"
-  interests       String    @default("[]") // SQLite doesn't support String[], using JSON string
-  gender          String?   // Changed from Gender enum to String for SQLite
-  role            String    @default("USER") // Changed from Role enum to String for SQLite
+  interests       String[]  @default([])
+  gender          String?   // stored as lowercase string for flexibility
+  role            UserRole  @default(USER)
   vibeScore       Float     @default(5.0) // 0-10 reputation score
+  onboardingComplete Boolean @default(false)
   isVerified      Boolean   @default(false)
   isEmailVerified Boolean   @default(false)
   isBanned        Boolean   @default(false)
@@ -63,6 +91,7 @@ model User {
   connections     Connection[]   @relation("ConnectionUserA")
   connectedWith   Connection[]   @relation("ConnectionUserB")
   confessions     Confession[]
+  confessionUpvotes ConfessionUpvote[]
   reports         Report[]       @relation("Reporter")
   reportedIn      Report[]       @relation("Reported")
   blocks          Block[]        @relation("Blocker")
@@ -153,8 +182,23 @@ model Confession {
 
   authorId    String?  // Nullable for true anonymity, but track for moderation
   author      User?    @relation(fields: [authorId], references: [id])
+  upvotedBy   ConfessionUpvote[]
 
   @@index([collegeId, createdAt])
+}
+
+model ConfessionUpvote {
+  id           String   @id @default(uuid())
+  createdAt    DateTime @default(now())
+
+  confessionId String
+  confession   Confession @relation(fields: [confessionId], references: [id], onDelete: Cascade)
+
+  userId       String
+  user         User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([confessionId, userId])
+  @@index([userId])
 }
 
 // ──────────────────────────────────────────────────────────────
@@ -162,9 +206,9 @@ model Confession {
 // ──────────────────────────────────────────────────────────────
 model Report {
   id          String       @id @default(uuid())
-  reason      String       // Changed from ReportReason enum to String
+  reason      ReportReason
   description String?
-  status      String       @default("PENDING") // Changed from ReportStatus enum to String
+  status      ReportStatus @default(PENDING)
   resolvedAt  DateTime?
   createdAt   DateTime     @default(now())
 
@@ -195,5 +239,3 @@ model Block {
 
   @@unique([blockerId, blockedId])
 }
-
-

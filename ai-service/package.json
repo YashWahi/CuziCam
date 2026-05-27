@@ -1,0 +1,19 @@
+{
+  "name": "cuzicam-ai-service",
+  "version": "1.0.0",
+  "private": true,
+  "description": "FastAPI service. package.json bridges Render when the backend npm/prisma build command is reused by mistake.",
+  "scripts": {
+    "build": "python -m pip install --upgrade pip && python -m pip install -r requirements.txt",
+    "start": "node dist/index.js"
+  },
+  "devDependencies": {
+    "prisma": "5.22.0"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.22.0"
+  }
+}

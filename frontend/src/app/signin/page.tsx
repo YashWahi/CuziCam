@@ -31,21 +31,19 @@ export default function SignInPage() {
 
     try {
       const response: any = await authApi.login({ email, password });
-      const { token, refreshToken, user } = response;
+      const { accessToken, refreshToken, user } = response;
       
-      // Initialize full session/context
-      await login(token, refreshToken);
+      await login(accessToken, refreshToken);
       
       if (!user.isVerified) {
-        router.push(`/verify-email?userId=${user.id}&email=${encodeURIComponent(email)}`);
+        router.push(`/auth/verify?userId=${user.id}&email=${encodeURIComponent(email)}`);
         return;
       }
 
-      // Check if user has completed onboarding (by checking college)
-      if (!user.college || !user.college.id) {
+      if (!user.onboardingComplete) {
         router.push('/onboarding');
       } else {
-        router.push('/dashboard');
+        router.push('/home');
       }
     } catch (err: any) {
       setError(err.message || 'Login failed. Please check your credentials.');
@@ -119,7 +117,7 @@ export default function SignInPage() {
             <Input
               label="College Email"
               type="email"
-              placeholder="you@college.edu"
+              placeholder="you@example.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               fullWidth

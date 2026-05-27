@@ -1,241 +1,178 @@
+import { randomUUID } from 'crypto';
 import { Server, Socket } from 'socket.io';
 import { prisma } from '../lib/prisma';
 import {
-  enqueue,
-  dequeue,
-  findBestMatch,
-  setActiveSession,
-  getActiveSession,
   clearActiveSession,
-  setLastSkipped,
+  dequeue,
+  enqueue,
+  findBestMatch,
+  getActiveSession,
   isChaosWindowActive,
   QueueEntry,
+  removeMatchedPair,
+  setActiveSession,
 } from '../services/matchmaking.service';
-import { redis } from '../lib/redis';
 import { verifyToken } from '../lib/jwt';
 import aiService from '../services/ai.service';
+import { redis } from '../lib/redis';
 
 const socketUserMap = new Map<string, string>();
 
+const relay = async (io: Server, socket: Socket, event: string, data: unknown) => {
+  const session = await getActiveSession(socket.id);
+  if (session) io.to(session.partner).emit(event, data);
+};
+
 export const registerSocketHandlers = (io: Server) => {
   io.on('connection', async (socket: Socket) => {
-    console.log(`[Socket] Connected: ${socket.id}`);
-
     socket.on('authenticate', async (token: string) => {
       try {
         const decoded = verifyToken(token);
-        if (!decoded) throw new Error('Invalid token');
-        
         socketUserMap.set(socket.id, decoded.userId);
-        
         await prisma.user.update({
           where: { id: decoded.userId },
-          data: { lastSeen: new Date() }
+          data: { lastSeen: new Date() },
         });
-
-        socket.emit('auth:success', { userId: decoded.userId });
+        socket.emit('auth:success');
       } catch {
         socket.emit('auth:error', 'Invalid token');
       }
     });
 
-    // ─── MATCHMAKING (Audit: 5s Retry Loop) ───────────────────
-    socket.on('match:join', async (data: { mode: string, preferences: any }) => {
+    const joinQueue = async () => {
       const userId = socketUserMap.get(socket.id);
       if (!userId) return socket.emit('error', 'Not authenticated');
 
-      const user = await prisma.user.findUnique({ where: { id: userId } });
-      if (!user) return;
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        include: { college: { select: { name: true } } },
+      });
+      if (!user || user.isBanned || !user.gender || (user.gender !== 'male' && user.gender !== 'female')) {
+        return socket.emit('error', 'Profile is not eligible for matchmaking');
+      }
 
       const entry: QueueEntry = {
         userId: user.id,
         socketId: socket.id,
         collegeId: user.collegeId || '',
-        interests: user.interests ? JSON.parse(user.interests) : [],
-        year: user.year || undefined,
-        vibeScore: user.vibeScore,
-        gender: user.gender || undefined,
-        mode: data.mode || 'random',
-        filters: data.preferences || {},
+        collegeName: user.college?.name || 'College',
+        name: user.name,
+        interests: user.interests || [],
+        gender: user.gender,
         joinedAt: Date.now(),
-      };
-
-      const startMatching = async () => {
-        // Double check if socket is still in queue
-        const stillInQueue = await redis.get(`session:${socket.id}`);
-        if (!stillInQueue) return;
-
-        const match = await findBestMatch(entry);
-        if (match) {
-          await dequeue(match.socketId);
-          await dequeue(socket.id);
-
-          const chaosActive = await isChaosWindowActive();
-          const session = await prisma.matchSession.create({
-            data: {
-              userAId: userId,
-              userBId: match.userId,
-              chaosWindow: chaosActive,
-            },
-          });
-
-          const sharedInterests = entry.interests.filter((i: string) => match.interests.includes(i));
-          const icebreaker = await aiService.getIcebreaker(entry.interests, match.interests);
-
-          await setActiveSession(socket.id, match.socketId, session.id);
-
-          const matchData = {
-            sessionId: session.id,
-            partnerId: match.userId,
-            sharedInterests,
-            icebreaker,
-            chaosActive
-          };
-
-          socket.emit('match:found', { ...matchData, role: 'caller' });
-          io.to(match.socketId).emit('match:found', { ...matchData, role: 'receiver' });
-        } else {
-          // Audit: Retry every 5 seconds
-          setTimeout(startMatching, 5000);
-        }
       };
 
       await enqueue(entry);
       socket.emit('match:searching');
-      await startMatching();
-    });
+
+      const tryMatch = async () => {
+        const stillQueued = await redis.get(`session:${socket.id}`);
+        if (!stillQueued) return;
+        const match = await findBestMatch(entry);
+        if (!match) {
+          setTimeout(tryMatch, 5000);
+          return;
+        }
+
+        await removeMatchedPair(entry, match);
+        const chaosActive = await isChaosWindowActive();
+        const sessionId = randomUUID();
+        await prisma.matchSession.create({
+          data: {
+            id: sessionId,
+            userAId: entry.userId,
+            userBId: match.userId,
+            chaosWindow: chaosActive,
+          },
+        });
+        await setActiveSession(socket.id, match.socketId, entry.userId, match.userId, sessionId);
+
+        const sharedInterests = entry.interests.filter((interest) => match.interests.includes(interest));
+        const icebreaker = await aiService.getIcebreaker(entry.interests, match.interests);
+
+        socket.emit('match:found', {
+          sessionId,
+          partnerId: match.userId,
+          partnerName: match.name,
+          partnerCollege: match.collegeName,
+          partnerGender: match.gender,
+          sharedInterests,
+          icebreaker,
+          role: 'caller',
+        });
+        io.to(match.socketId).emit('match:found', {
+          sessionId,
+          partnerId: entry.userId,
+          partnerName: entry.name,
+          partnerCollege: entry.collegeName,
+          partnerGender: entry.gender,
+          sharedInterests,
+          icebreaker,
+          role: 'receiver',
+        });
+      };
+
+      await tryMatch();
+    };
+
+    socket.on('join:queue', joinQueue);
+    socket.on('match:join', joinQueue);
 
     socket.on('match:cancel', async () => {
       await dequeue(socket.id);
       socket.emit('match:cancelled');
     });
 
-    // ─── WEBRTC SIGNALING (Audit: Partner Relay Validation) ──
-    socket.on('signal:offer', async (data: any) => {
+    socket.on('webrtc:offer', (data) => relay(io, socket, 'webrtc:offer', data));
+    socket.on('webrtc:answer', (data) => relay(io, socket, 'webrtc:answer', data));
+    socket.on('webrtc:ice-candidate', (data) => relay(io, socket, 'webrtc:ice-candidate', data));
+    socket.on('signal:offer', (data) => relay(io, socket, 'signal:offer', data));
+    socket.on('signal:answer', (data) => relay(io, socket, 'signal:answer', data));
+    socket.on('signal:ice', (data) => relay(io, socket, 'signal:ice', data));
+
+    socket.on('chat:message', async (data: { sessionId?: string; content?: string; text?: string }) => {
       const session = await getActiveSession(socket.id);
-      if (session && io.sockets.adapter.rooms.has(session.partner)) {
-        io.to(session.partner).emit('signal:offer', data);
-      }
+      const senderId = socketUserMap.get(socket.id);
+      if (!session || !senderId || (data.sessionId && data.sessionId !== session.sessionId)) return;
+
+      const content = String(data.content || data.text || '').trim().slice(0, 1000);
+      if (!content) return;
+
+      const moderation = await aiService.checkToxicity(content);
+      const displayContent = moderation.isToxic ? '[Message removed]' : content;
+      const payload = { sessionId: session.sessionId, content: displayContent, senderId, timestamp: Date.now() };
+
+      socket.emit('chat:message', payload);
+      io.to(session.partner).emit('chat:message', payload);
+      if (moderation.isToxic) socket.emit('chat:warning', { reason: 'Toxic content detected' });
     });
 
-    socket.on('signal:answer', async (data: any) => {
-      const session = await getActiveSession(socket.id);
-      if (session && io.sockets.adapter.rooms.has(session.partner)) {
-        io.to(session.partner).emit('signal:answer', data);
-      }
-    });
-
-    socket.on('signal:ice', async (data: any) => {
-      const session = await getActiveSession(socket.id);
-      if (session && io.sockets.adapter.rooms.has(session.partner)) {
-        io.to(session.partner).emit('signal:ice', data);
-      }
-    });
-
-    // ─── CHAT (Audit: Relaying Blocking) ──────────────────────
-    socket.on('chat:message', async (data: { text: string }) => {
+    socket.on('chat:leave', async () => {
       const session = await getActiveSession(socket.id);
       if (!session) return;
-
-      const toxicityScore = await aiService.checkToxicity(data.text);
-      if (toxicityScore > 0.8) {
-        return socket.emit('chat:blocked', { reason: 'Toxic content detected' });
-      }
-
-      if (io.sockets.adapter.rooms.has(session.partner)) {
-        io.to(session.partner).emit('chat:message', {
-          text: data.text,
-          userId: socketUserMap.get(socket.id),
-          timestamp: Date.now()
-        });
-      }
-    });
-
-    // ─── SESSION END (Audit: Summary & vibeScore) ─────────────
-    socket.on('session:end', async () => {
-      const session = await getActiveSession(socket.id);
-      if (!session) return;
-
-      const dbSession = await prisma.matchSession.update({
-        where: { id: session.sessionId },
-        data: { endTime: new Date() }
-      });
-
-      // Calculate Duration and Reward
-      const durationMs = new Date().getTime() - new Date(dbSession.startTime).getTime();
-      const durationMins = Math.floor(durationMs / 60000);
-      const vibeGain = Math.min(5, Math.max(1, Math.floor(durationMins / 2))); // 1-5 points
-
-      await prisma.user.updateMany({
-        where: { id: { in: [dbSession.userAId, dbSession.userBId] } },
-        data: { vibeScore: { increment: vibeGain } }
-      });
-
-      const summary = {
-        durationMins,
-        vibeGain,
-        endedBy: socketUserMap.get(socket.id)
-      };
-
-      socket.emit('session:summary', summary);
-      io.to(session.partner).emit('session:summary', summary);
-      
+      io.to(session.partner).emit('session:partner-disconnected');
       await clearActiveSession(socket.id, session.partner);
     });
 
-    // ─── STAR SYSTEM (Audit: Mutual detection & Connection) ──
-    socket.on('session:star', async () => {
+    socket.on('session:end', async () => {
       const session = await getActiveSession(socket.id);
-      const userId = socketUserMap.get(socket.id);
-      if (!session || !userId) return;
-
-      const starKey = `stars:${session.sessionId}:${userId}`;
-      await redis.set(starKey, 'true', 'EX', 3600);
-
-      const partnerUserId = socketUserMap.get(session.partner);
-      if (!partnerUserId) return;
-
-      const partnerStarKey = `stars:${session.sessionId}:${partnerUserId}`;
-      const partnerStarred = await redis.get(partnerStarKey);
-
-      if (partnerStarred) {
-        // Mutual Star! Create Connection in DB
-        try {
-          await prisma.connection.create({
-            data: {
-              userAId: userId < partnerUserId ? userId : partnerUserId,
-              userBId: userId < partnerUserId ? partnerUserId : userId,
-              sessionId: session.sessionId
-            }
-          });
-          
-          socket.emit('star:mutual');
-          io.to(session.partner).emit('star:mutual');
-        } catch (e) {
-          // Connection likely exists
-        }
-      } else {
-        socket.emit('star:sent');
-      }
+      if (!session) return;
+      await prisma.matchSession.update({ where: { id: session.sessionId }, data: { endTime: new Date() } });
+      io.to(session.partner).emit('session:partner-disconnected');
+      await clearActiveSession(socket.id, session.partner);
     });
 
     socket.on('disconnect', async () => {
       const userId = socketUserMap.get(socket.id);
       if (userId) {
-        await prisma.user.update({
-          where: { id: userId },
-          data: { lastSeen: new Date() }
-        });
+        await prisma.user.update({ where: { id: userId }, data: { lastSeen: new Date() } }).catch(() => undefined);
       }
       await dequeue(socket.id);
-      
-      // Notify partner of disconnect if in session
       const session = await getActiveSession(socket.id);
       if (session) {
         io.to(session.partner).emit('session:partner-disconnected');
         await clearActiveSession(socket.id, session.partner);
       }
-
       socketUserMap.delete(socket.id);
     });
   });

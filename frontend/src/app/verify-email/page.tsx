@@ -79,12 +79,9 @@ function VerifyEmailContent() {
       }
       
       setSuccess('Email verified successfully! Redirecting...');
-      
-      setTimeout(() => {
-        router.push('/onboarding');
-      }, 2000);
+      router.push(response.user?.onboardingComplete ? '/home' : '/onboarding');
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Invalid or expired code.');
+      setError(err.data?.error || err.message || 'Invalid or expired code.');
     } finally {
       setLoading(false);
     }

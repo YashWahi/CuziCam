@@ -55,8 +55,7 @@ export default function OnboardingPage() {
     try {
       const response = await userApi.getColleges() as any;
       setColleges(response.data || response);
-    } catch (err) {
-      console.error('Failed to fetch colleges', err);
+    } catch {
       setCollegesError(true);
     } finally {
       setIsCollegesLoading(false);
@@ -110,25 +109,19 @@ export default function OnboardingPage() {
         collegeId: formData.collegeId,
         year: formData.year,
         branch: formData.branch,
-        interests: Array.isArray(formData.interests) ? formData.interests : JSON.parse(formData.interests),
+        interests: formData.interests,
         bio: formData.bio,
         preferences: formData.preferences
       }) as any;
       
-      console.log('Onboarding response:', response);
-
-      // Even if updateUser fails, we want to try to redirect
       try {
-        // Backend now returns { success: true, user: result }
         const userData = response.user || response;
         updateUser(userData);
       } catch (userUpdateError) {
-        console.error('Failed to update user context:', userUpdateError);
       }
 
-      router.push('/dashboard');
+      router.push('/home');
     } catch (err: any) {
-      console.error('Onboarding submission failed', err);
       setSubmitError(true);
       setIsSubmitting(false);
     }

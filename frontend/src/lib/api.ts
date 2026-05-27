@@ -1,6 +1,6 @@
 import Cookies from 'js-cookie';
 
-const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:5000/api/v1';
+const BASE_URL = `${process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001'}/api/v1`;
 
 interface FetchClientOptions extends RequestInit {
   params?: Record<string, string>;
@@ -42,6 +42,7 @@ async function fetchClient<T>(endpoint: string, options: FetchClientOptions = {}
 
   const config: RequestInit = {
     method: 'GET',
+    credentials: 'include',
     ...customConfig,
     headers,
   };
@@ -50,16 +51,15 @@ async function fetchClient<T>(endpoint: string, options: FetchClientOptions = {}
 
   // Auto-refresh token on 401 Unauthorized
   if (response.status === 401 && !_retry) {
-    const refreshToken = Cookies.get('refreshToken');
-    
-    if (refreshToken) {
+    {
       try {
         const refreshResponse = await fetch(`${BASE_URL}/auth/refresh`, {
           method: 'POST',
+          credentials: 'include',
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({ refreshToken }),
+          body: JSON.stringify({}),
         });
 
         if (refreshResponse.ok) {
@@ -73,7 +73,6 @@ async function fetchClient<T>(endpoint: string, options: FetchClientOptions = {}
           return fetchClient<T>(endpoint, { ...options, _retry: true });
         }
       } catch (e) {
-        console.error('Token refresh failed', e);
       }
     }
     
@@ -82,7 +81,7 @@ async function fetchClient<T>(endpoint: string, options: FetchClientOptions = {}
     Cookies.remove('refreshToken');
     
     if (typeof window !== 'undefined') {
-      window.location.href = '/signin'; // Redirect to login on client side
+      window.location.href = '/auth/login';
     }
   }
 
@@ -118,7 +117,6 @@ export const authApi = {
   register: (data: any) => fetchClient('/auth/register', { method: 'POST', body: JSON.stringify(data) }),
   logout: () => fetchClient('/auth/logout', { method: 'POST' }),
   getCurrentUser: () => fetchClient('/auth/me'),
-  verifyEmail: (token: string) => fetchClient('/auth/verify-email', { method: 'POST', body: JSON.stringify({ token }) }),
   verifyOTP: (data: { userId: string; otp: string }) => fetchClient('/auth/verify-otp', { method: 'POST', body: JSON.stringify(data) }),
   resendOtp: (data: { userId: string }) => fetchClient('/auth/resend-otp', { method: 'POST', body: JSON.stringify(data) }),
   forgotPassword: (email: string) => fetchClient('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) }),
@@ -127,6 +125,7 @@ export const authApi = {
 
 export const userApi = {
   getProfile: (id?: string) => fetchClient(id ? `/users/${id}` : '/users/profile'),
+  getMe: () => fetchClient('/users/me'),
   updateProfile: (data: any) => fetchClient('/users/profile', { method: 'PUT', body: JSON.stringify(data) }),
   uploadAvatar: (formData: FormData) => fetchClient('/users/avatar', { 
     method: 'POST', 
@@ -137,13 +136,16 @@ export const userApi = {
   getStats: () => fetchClient('/users/me/stats'),
   getConnections: () => fetchClient('/users/me/connections'),
   completeOnboarding: (data: any) => fetchClient('/users/me/onboarding', { method: 'POST', body: JSON.stringify(data) }),
+  report: (data: { reportedId: string; reason: string; sessionId: string }) => fetchClient('/users/report', { method: 'POST', body: JSON.stringify(data) }),
+  block: (data: { blockedId: string }) => fetchClient('/users/block', { method: 'POST', body: JSON.stringify(data) }),
+  getBlocks: () => fetchClient('/users/blocks'),
   getColleges: () => fetchClient('/colleges'),
 };
 
 export const confessionsApi = {
   getAll: (params?: { page?: number; limit?: number; sort?: string }) => fetchClient('/confessions', { params: params as Record<string, string> }),
   getById: (id: string) => fetchClient(`/confessions/${id}`),
-  create: (data: { content: string; background?: string }) => fetchClient('/confessions', { method: 'POST', body: JSON.stringify(data) }),
+  create: (data: { content: string; isAnonymous?: boolean }) => fetchClient('/confessions', { method: 'POST', body: JSON.stringify(data) }),
   like: (id: string) => fetchClient(`/confessions/${id}/like`, { method: 'POST' }),
   report: (id: string, reason: string) => fetchClient(`/confessions/${id}/report`, { method: 'POST', body: JSON.stringify({ reason }) })
 };
@@ -152,7 +154,7 @@ export const chaosApi = {
   join: () => fetchClient('/chaos/join', { method: 'POST' }),
   leave: () => fetchClient('/chaos/leave', { method: 'POST' }),
   getState: () => fetchClient('/chaos/state'),
-  getStatus: () => fetchClient('/chaos/status'),
+  getStatus: () => fetchClient('/matchmaking/status'),
 };
 
 export const matchApi = {
@@ -163,7 +165,7 @@ export const matchApi = {
 };
 
 export const moderationApi = {
-  report: (data: any) => fetchClient('/moderation/report', { method: 'POST', body: JSON.stringify(data) }),
+  report: (data: any) => fetchClient('/users/report', { method: 'POST', body: JSON.stringify(data) }),
 };
 
 export default fetchClient;
