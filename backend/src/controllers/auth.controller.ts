@@ -2,23 +2,35 @@ import { Request, Response } from 'express';
 import * as authService from '../services/auth.service';
 import { prisma } from '../lib/prisma';
 import { signToken, signRefreshToken } from '../lib/jwt';
+import { publicUser } from '../services/auth.service';
+
+const setAuthCookies = (res: Response, accessToken: string, refreshToken: string) => {
+  const isProd = process.env.NODE_ENV === 'production';
+  res.cookie('accessToken', accessToken, {
+    httpOnly: true,
+    secure: isProd,
+    sameSite: isProd ? 'none' : 'lax',
+    maxAge: 15 * 60 * 1000, // 15 minutes
+  });
+
+  res.cookie('refreshToken', refreshToken, {
+    httpOnly: true,
+    secure: isProd,
+    sameSite: isProd ? 'none' : 'lax',
+    maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+  });
+};
 
 export const register = async (req: Request, res: Response) => {
   try {
-    const { email, password, name, collegeId, year, branch, interests } = req.body;
-    
-    if (!email || !password || !name) {
-      return res.status(400).json({ error: 'Missing required fields' });
-    }
+    const { email, password, name, gender, college } = req.body;
 
     const { user } = await authService.registerWithEmail({
       email,
       password,
       name,
-      collegeId,
-      year,
-      branch,
-      interests
+      gender,
+      college,
     });
 
     res.status(201).json({
@@ -35,31 +47,12 @@ export const login = async (req: Request, res: Response) => {
     const { email, password } = req.body;
     const { accessToken, refreshToken, user } = await authService.loginWithEmail(email, password);
 
-    // Set HTTP-only cookies
-    res.cookie('accessToken', accessToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: 3600000 // 1h
-    });
-
-    res.cookie('refreshToken', refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: 7 * 24 * 3600000 // 7d
-    });
+    setAuthCookies(res, accessToken, refreshToken);
 
     res.json({
-      accessToken, // Keep for legacy/manual header support if needed
+      accessToken,
       refreshToken,
-      user: {
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        collegeId: user.collegeId,
-        role: user.role
-      }
+      user,
     });
   } catch (error: any) {
     const status = error.cause === 'UNVERIFIED' ? 403 : 401;
@@ -70,26 +63,22 @@ export const login = async (req: Request, res: Response) => {
 export const verifyEmail = async (req: Request, res: Response) => {
   try {
     const { userId, otp } = req.body;
-    if (!userId || !otp) return res.status(400).json({ error: 'UserId and OTP are required' });
-
     const user = await authService.verifyOTP(userId, otp);
 
-    // Generate tokens
     const payload = { userId: user.id, email: user.email, role: user.role };
     const accessToken = signToken(payload);
     const refreshToken = signRefreshToken(payload);
+    setAuthCookies(res, accessToken, refreshToken);
 
-    // Save refresh token to database
     await prisma.user.update({
       where: { id: user.id },
       data: { refreshToken, lastSeen: new Date() },
     });
 
     return res.json({
-      message: 'Email verified successfully',
       accessToken,
       refreshToken,
-      user: { id: user.id, email: user.email, name: user.name }
+      user: publicUser(user),
     });
   } catch (error: any) {
     res.status(400).json({ error: error.message });
@@ -99,7 +88,6 @@ export const verifyEmail = async (req: Request, res: Response) => {
 export const forgotPassword = async (req: Request, res: Response) => {
   try {
     const { email } = req.body;
-    if (!email) return res.status(400).json({ error: 'Email is required' });
     await authService.forgotPassword(email);
     res.json({ message: 'If that email exists, a reset link has been sent.' });
   } catch (error: any) {
@@ -117,20 +105,7 @@ export const refresh = async (req: Request, res: Response) => {
 
     const tokens = await authService.refreshTokens(token);
 
-    // Set HTTP-only cookies
-    res.cookie('accessToken', tokens.accessToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: 3600000 // 1h
-    });
-
-    res.cookie('refreshToken', tokens.refreshToken, {
-      httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: 7 * 24 * 3600000 // 7d
-    });
+    setAuthCookies(res, tokens.accessToken, tokens.refreshToken);
 
     res.json(tokens);
   } catch (error: any) {
@@ -190,7 +165,7 @@ export const getMe = async (req: Request, res: Response) => {
 
     if (!user) return res.status(404).json({ error: 'User not found' });
 
-    res.json(user);
+    res.json(publicUser(user));
   } catch (error) {
     res.status(500).json({ error: 'Internal server error' });
   }

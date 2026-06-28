@@ -2,9 +2,16 @@
 node_modules/
 backend/node_modules/
 frontend/node_modules/
+ai-service/__pycache__/
+ai-service/.venv/
+ai-service/node_modules/
+ai-service/prisma/*.db
+ai-service/prisma/*.db-journal
 
 # Build outputs
 dist/
+!ai-service/dist/
+!ai-service/dist/index.js
 build/
 .next/
 out/
@@ -13,10 +20,18 @@ backend/dist/
 # Environment files
 .env
 .env.local
+.env.production
 .env.development.local
 .env.test.local
 .env.production.local
 backend/.env
+frontend/.env.local
+ai-service/.env
+
+# SQLite database files
+*.db
+prisma/*.db
+backend/prisma/*.db
 
 # OS files
 .DS_Store
@@ -30,5 +45,3 @@ yarn-error.log*
 # Other
 .gemini/
 .vscode/
-prisma/dev.db
-backend/prisma/dev.db

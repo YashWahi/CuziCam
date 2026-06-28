@@ -4,7 +4,7 @@ CuziCam is a real-time anonymous video and text chat platform designed exclusive
 
 ## 🚀 Key Features
 
-*   **Verified Community**: Only `.edu` email holders can join.
+*   **Verified Community**: Account verification and onboarding keep the community accountable.
 *   **AI Vibe Matching**: Matches based on shared interests, department, and conversation quality.
 *   **Real-Time Video**: Low-latency WebRTC streams with Socket.io signaling.
 *   **Anonymous Confessions**: A college-specific board for students to share thoughts.
@@ -45,7 +45,7 @@ CuziCam is a real-time anonymous video and text chat platform designed exclusive
     ```bash
     cd ai-service
     pip install -r requirements.txt
-    uvicorn app.main:app --port 8000 --reload
+    python -m uvicorn app.main:app --port 8000 --reload
     ```
 
 4.  **Frontend Setup**
@@ -55,6 +55,21 @@ CuziCam is a real-time anonymous video and text chat platform designed exclusive
     npm run dev
     ```
 
+## ☁️ Render deployment (production)
+
+**Backend** (`cuzicam-backend-a484.onrender.com`):
+
+1. Set `NODE_ENV=production` and `FRONTEND_URL` to your **exact** frontend URL (e.g. `https://cuzicam-frontend.onrender.com`).
+2. Redeploy after changing CORS env vars — see [backend/DEPLOY.md](backend/DEPLOY.md).
+3. Startup log should include `[CORS] Allowed origins: ...` with your frontend URL.
+
+**Frontend** (Render or Vercel):
+
+```env
+NEXT_PUBLIC_BACKEND_URL=https://cuzicam-backend-a484.onrender.com
+NEXT_PUBLIC_SOCKET_URL=https://cuzicam-backend-a484.onrender.com
+```
+
 ## 🛡 Security & Moderation
 
 *   **JWT Authentication**: Secure user sessions with access/refresh tokens.
@@ -62,4 +77,4 @@ CuziCam is a real-time anonymous video and text chat platform designed exclusive
 *   **Role-Based Access**: Specialized views for students, moderators, and admins.
 
 ---
-Built with ❤️ for the student community.
+Built with ❤️ for the student community

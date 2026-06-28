@@ -12,7 +12,8 @@ const transporter = nodemailer.createTransport({
 });
 
 export const sendOTP = async (email: string, otp: string) => {
-  console.log(`[EMAIL STUB] OTP for ${email}: ${otp}`);
+  void email;
+  void otp;
   // Uncomment when SMTP is ready:
   /*
   await transporter.sendMail({
@@ -25,11 +26,13 @@ export const sendOTP = async (email: string, otp: string) => {
 };
 
 export const sendPasswordReset = async (email: string, token: string) => {
-  console.log(`[EMAIL STUB] PW Reset for ${email}: ${token}`);
+  void email;
+  void token;
 };
 
 export const sendWeeklyPulse = async (email: string, stats: any) => {
-  console.log(`[EMAIL STUB] Weekly Pulse for ${email}`);
+  void email;
+  void stats;
 };
 
 export default {

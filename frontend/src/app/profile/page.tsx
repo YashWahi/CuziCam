@@ -13,11 +13,7 @@ import { Badge } from '@/components/Badge';
 import styles from './page.module.css';
 
 const INTERESTS = [
-  'Coding', 'Design', 'Hackathons', 'Gaming', 'Greek Life', 
-  'Entrepreneurship', 'Basketball', 'Football', 'Soccer', 
-  'Anime', 'Photography', 'Music Production', 'Hiking', 
-  'Debate', 'Theater', 'Chess', 'Investing', 'Fitness', 
-  'Cooking', 'Travel', 'Art', 'Sustainability', 'Psychology'
+  'Music', 'Gaming', 'Sports', 'Tech', 'Art', 'Cooking', 'Travel', 'Reading', 'Fitness', 'Movies', 'Memes', 'Startups'
 ];
 
 const YEAR_OPTIONS = ['Freshman', 'Sophomore', 'Junior', 'Senior', 'Masters', 'PhD'];
@@ -41,7 +37,7 @@ export default function ProfilePage() {
   useEffect(() => {
     userApi.getStats()
       .then(data => setStats(data))
-      .catch(err => console.error("Failed to load stats", err));
+      .catch(() => undefined);
   }, []);
 
   useEffect(() => {
@@ -72,8 +68,7 @@ export default function ProfilePage() {
     try {
       await userApi.updateProfile(formData);
       setSaveStatus('success');
-    } catch (err) {
-      console.error(err);
+    } catch {
       setSaveStatus('error');
     } finally {
       setIsSaving(false);
@@ -89,8 +84,7 @@ export default function ProfilePage() {
         logout();
       }
       window.location.href = '/';
-    } catch (err) {
-      console.error(err);
+    } catch {
       setIsDeactivating(false);
       setIsDeactivateModalOpen(false);
     }

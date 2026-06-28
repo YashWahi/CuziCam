@@ -32,8 +32,7 @@ export default function QueuePage() {
   const joinQueue = useCallback((currentFilters = filters) => {
     if (!socket || !isConnected) return;
     
-    console.log('[Queue] Joining with filters:', currentFilters);
-    socket.emit('match:join', { 
+    socket.emit('join:queue', { 
       mode: currentFilters.mode, 
       preferences: {
         collegeOnly: currentFilters.collegeOnly,
@@ -45,7 +44,7 @@ export default function QueuePage() {
   // Fetch Chaos Status
   useEffect(() => {
     chaosApi.getStatus()
-      .then((res: any) => setChaosActive(res.data?.isActive || false))
+      .then((res: any) => setChaosActive(Boolean(res.isChaosWindow || res.data?.isChaosWindow)))
       .catch(() => {
         // Silently hide chaos banner on failure
         setChaosActive(false);
@@ -65,7 +64,11 @@ export default function QueuePage() {
       setStatus('Finding your vibe...');
     };
 
-    const handleMatchFound = (data: { sessionId: string; role: string }) => {
+    const handleMatchFound = (data: { sessionId: string; role: string; partnerId: string; partnerName?: string; partnerCollege?: string; partnerGender?: string }) => {
+      sessionStorage.setItem('partnerId', data.partnerId);
+      if (data.partnerName) sessionStorage.setItem('partnerName', data.partnerName);
+      if (data.partnerCollege) sessionStorage.setItem('partnerCollege', data.partnerCollege);
+      if (data.partnerGender) sessionStorage.setItem('partnerGender', data.partnerGender);
       setStatus('Match found! Connecting...');
       setTimeout(() => {
         router.push(`/chat/${data.sessionId}?role=${data.role}`);
@@ -73,7 +76,6 @@ export default function QueuePage() {
     };
 
     const handleError = (err: any) => {
-      console.error('[Queue Error]', err);
       setStatus('Something went wrong. Retrying...');
     };
 

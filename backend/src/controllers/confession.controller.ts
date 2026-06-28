@@ -7,7 +7,9 @@ import aiService from '../services/ai.service';
 export const getConfessionsByCollege = async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
-    const { sort = 'new' } = req.query;
+    const { sort = 'trending', page = '1', limit = '20' } = req.query;
+    const pageNumber = Math.max(1, Number(page) || 1);
+    const pageSize = Math.min(50, Math.max(1, Number(limit) || 20));
     
     const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user) return res.status(404).json({ error: 'User not found' });
@@ -17,24 +19,29 @@ export const getConfessionsByCollege = async (req: AuthRequest, res: Response) =
     let confessions = await prisma.confession.findMany({
       where: { collegeId: user.collegeId, isVisible: true },
       orderBy: { createdAt: 'desc' },
-      take: 100,
+      take: 200,
       include: {
+        college: { select: { name: true } },
         author: { select: { name: true, avatarUrl: true } }
       }
     });
 
     if (sort === 'trending') {
-      // Trending Algorithm: Score = Upvotes / (AgeInHours + 2)^1.5
       confessions = confessions.sort((a, b) => {
         const ageA = (Date.now() - new Date(a.createdAt).getTime()) / (1000 * 3600);
         const ageB = (Date.now() - new Date(b.createdAt).getTime()) / (1000 * 3600);
-        const scoreA = (a.upvotes + 1) / Math.pow(ageA + 2, 1.5);
-        const scoreB = (b.upvotes + 1) / Math.pow(ageB + 2, 1.5);
+        const scoreA = a.upvotes / Math.pow(ageA + 2, 1.5);
+        const scoreB = b.upvotes / Math.pow(ageB + 2, 1.5);
         return scoreB - scoreA;
       });
     }
 
-    res.json(confessions.slice(0, 50));
+    const start = (pageNumber - 1) * pageSize;
+    res.json({
+      items: confessions.slice(start, start + pageSize),
+      page: pageNumber,
+      hasMore: start + pageSize < confessions.length,
+    });
   } catch (error: any) {
     res.status(500).json({ error: error.message });
   }
@@ -43,21 +50,26 @@ export const getConfessionsByCollege = async (req: AuthRequest, res: Response) =
 export const createConfession = async (req: AuthRequest, res: Response) => {
   try {
     const userId = req.user?.userId;
-    const { content } = req.body;
-    if (!content) return res.status(400).json({ error: 'Content is required' });
+    const { content, isAnonymous } = req.body;
+    const sanitizedContent = content
+      .replace(/https?:\/\/\S+/gi, '')
+      .replace(/www\.\S+/gi, '')
+      .replace(/<[^>]*>/g, '')
+      .trim();
+    if (!sanitizedContent) return res.status(400).json({ error: 'Content is required' });
 
     const user = await prisma.user.findUnique({ where: { id: userId } });
     if (!user || !user.collegeId) return res.status(404).json({ error: 'User or college not found' });
 
-    const toxicScore = await aiService.checkToxicity(content);
+    const moderation = await aiService.checkToxicity(sanitizedContent);
 
     const confession = await prisma.confession.create({
       data: {
-        content,
+        content: sanitizedContent,
         collegeId: user.collegeId, // Explicitly attached from profile
-        authorId: userId,
-        toxicScore,
-        isVisible: toxicScore < 0.8
+        authorId: isAnonymous ? null : userId,
+        toxicScore: moderation.confidence,
+        isVisible: !moderation.isToxic,
       }
     });
 
@@ -73,22 +85,26 @@ export const upvoteConfession = async (req: AuthRequest, res: Response) => {
     const userId = req.user?.userId;
     if (!userId) return res.status(401).json({ error: 'Unauthorized' });
 
-    // Anti-double-vote: Check Redis
-    const voteKey = `voted:confession:${id}:user:${userId}`;
-    const alreadyVoted = await redis.get(voteKey);
-    if (alreadyVoted) {
-      return res.status(403).json({ error: 'You have already upvoted this confession' });
-    }
-
-    const confession = await prisma.confession.update({
-      where: { id },
-      data: { upvotes: { increment: 1 } }
+    const existing = await prisma.confessionUpvote.findUnique({
+      where: { confessionId_userId: { confessionId: id, userId } },
     });
 
-    // Mark as voted for 24 hours
-    await redis.set(voteKey, '1', 'EX', 86400);
+    if (existing) {
+      await prisma.$transaction([
+        prisma.confessionUpvote.delete({ where: { id: existing.id } }),
+        prisma.confession.update({ where: { id }, data: { upvotes: { decrement: 1 } } }),
+      ]);
+      const confession = await prisma.confession.findUnique({ where: { id } });
+      return res.json({ ...confession, upvoted: false });
+    }
 
-    res.json(confession);
+    await prisma.$transaction([
+      prisma.confessionUpvote.create({ data: { confessionId: id, userId } }),
+      prisma.confession.update({ where: { id }, data: { upvotes: { increment: 1 } } }),
+    ]);
+    const confession = await prisma.confession.findUnique({ where: { id } });
+
+    res.json({ ...confession, upvoted: true });
   } catch (error: any) {
     res.status(400).json({ error: error.message });
   }

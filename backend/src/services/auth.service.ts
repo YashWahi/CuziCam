@@ -5,44 +5,63 @@ import crypto from 'crypto';
 import { redis } from '../lib/redis';
 import emailService from './email.service';
 
-// Known India college domains
-// Removed hardcoded domain list; validation now queries the College table
-
-export const isValidEduEmail = async (email: string): Promise<boolean> => {
-  const domain = email.split('@')[1]?.toLowerCase();
-  if (!domain) return false;
-  const college = await prisma.college.findUnique({ where: { domain } });
-  return !!college;
+export const isValidEmail = (email: string): boolean => {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
 };
+
+const getOrCreateCollege = async (email: string, collegeName: string) => {
+  const domain = email.split('@')[1]?.toLowerCase();
+  if (!domain) throw new Error('Invalid email domain.');
+
+  return prisma.college.upsert({
+    where: { domain },
+    update: { name: collegeName },
+    create: { name: collegeName, domain },
+  });
+};
+
+export const publicUser = (user: any) => ({
+  id: user.id,
+  email: user.email,
+  name: user.name,
+  gender: user.gender,
+  role: user.role,
+  collegeId: user.collegeId,
+  college: user.college ? { id: user.college.id, name: user.college.name, domain: user.college.domain } : null,
+  interests: Array.isArray(user.interests) ? user.interests : [],
+  onboardingComplete: user.onboardingComplete,
+  isVerified: user.isVerified,
+  isEmailVerified: user.isEmailVerified,
+  vibeScore: user.vibeScore,
+});
 
 export const registerWithEmail = async (data: {
   email: string;
   password: string;
   name: string;
-  collegeId?: string;
-  year?: string;
-  branch?: string;
-  interests?: string[];
+  gender: 'male' | 'female';
+  college: string;
 }) => {
-  if (!(await isValidEduEmail(data.email))) {
-    throw new Error('Please use a valid college email address.');
+  if (!isValidEmail(data.email)) {
+    throw new Error('Please use a valid email address.');
   }
 
   const existing = await prisma.user.findUnique({ where: { email: data.email } });
   if (existing) throw new Error('Email already registered.');
 
   const passwordHash = await bcrypt.hash(data.password, 12);
+  const college = await getOrCreateCollege(data.email, data.college);
   
   const user = await prisma.user.create({
     data: {
       email: data.email,
       name: data.name,
       passwordHash,
-      collegeId: data.collegeId,
-      year: data.year,
-      branch: data.branch,
-      interests: JSON.stringify(data.interests || []),
+      gender: data.gender,
+      collegeId: college.id,
+      interests: [],
     },
+    include: { college: true },
   });
 
   // Generate 6-digit OTP
@@ -64,14 +83,16 @@ export const verifyOTP = async (userId: string, otp: string) => {
       isEmailVerified: true,
       isVerified: true 
     },
+    include: { college: true },
   });
 
   await redis.del(`otp:${userId}`);
+
   return user;
 };
 
 export const loginWithEmail = async (email: string, password: string) => {
-  const user = await prisma.user.findUnique({ where: { email } });
+  const user = await prisma.user.findUnique({ where: { email }, include: { college: true } });
   if (!user || !user.passwordHash) throw new Error('Invalid credentials.');
 
   const valid = await bcrypt.compare(password, user.passwordHash);
@@ -89,7 +110,7 @@ export const loginWithEmail = async (email: string, password: string) => {
     data: { refreshToken, lastSeen: new Date() },
   });
 
-  return { accessToken, refreshToken, user };
+  return { accessToken, refreshToken, user: publicUser(user) };
 };
 
 export const forgotPassword = async (email: string) => {
@@ -104,9 +125,9 @@ export const forgotPassword = async (email: string) => {
 
 export const refreshTokens = async (token: string) => {
   const decoded = verifyRefreshToken(token);
-  const user = await prisma.user.findUnique({ where: { id: decoded.userId } });
+  const user = await prisma.user.findUnique({ where: { id: decoded.userId }, include: { college: true } });
 
-  if (!user || user.refreshToken !== token)
+  if (!user || user.isBanned || user.refreshToken !== token)
     throw new Error('Invalid refresh token.');
 
   const payload = { userId: user.id, email: user.email, role: user.role };
@@ -118,7 +139,7 @@ export const refreshTokens = async (token: string) => {
     data: { refreshToken: newRefreshToken, lastSeen: new Date() },
   });
 
-  return { accessToken, refreshToken: newRefreshToken };
+  return { accessToken, refreshToken: newRefreshToken, user: publicUser(user) };
 };
 
 export const googleOAuthLogin = async (data: {
@@ -128,8 +149,8 @@ export const googleOAuthLogin = async (data: {
   avatarUrl?: string;
   collegeId?: string;
 }) => {
-  if (!(await isValidEduEmail(data.email))) {
-    throw new Error('Please use a valid college email address.');
+  if (!isValidEmail(data.email)) {
+    throw new Error('Please use a valid email address.');
   }
 
   let user = await prisma.user.findFirst({

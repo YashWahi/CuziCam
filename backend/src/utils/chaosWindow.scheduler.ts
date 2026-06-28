@@ -1,46 +1,28 @@
 import cron from 'node-cron';
-import { setChaosWindow, isChaosWindowActive } from '../services/matchmaking.service';
+import { getChaosWindowStatus as readChaosStatus, setChaosStart } from '../services/matchmaking.service';
 
-// Chaos Window: a dynamically randomized 2-hour window each day
-// The window start hour is varied deliberately to keep it unpredictable
-// Users with "Strict Preference Mode" opt out via their profile flag
-
-const getRandomHour = (): number => {
-  // Random hour between 8:00 PM and 11:00 PM
-  const hours = [20, 21, 22];
-  return hours[Math.floor(Math.random() * hours.length)];
-};
+const getRandomHour = (): number => Math.floor(Math.random() * 15) + 8;
 
 let scheduledHour = getRandomHour();
 
+const scheduleToday = async () => {
+  const start = new Date();
+  start.setHours(scheduledHour, 0, 0, 0);
+  await setChaosStart(start.getTime());
+};
+
 export const startChaosWindowScheduler = () => {
+  scheduleToday().catch(() => undefined);
   console.log(`[Chaos Window] Scheduler started. Today's window: ${scheduledHour}:00 - ${scheduledHour + 2}:00`);
 
-  // Check every minute if we should activate/deactivate chaos window
-  cron.schedule('* * * * *', async () => {
-    const now = new Date();
-    const currentHour = now.getHours();
-    const isActive = await isChaosWindowActive();
-
-    if (currentHour === scheduledHour && !isActive) {
-      // Activate for 2 hours (7200 seconds)
-      await setChaosWindow(true, 7200);
-      console.log(`[Chaos Window] ACTIVATED at ${now.toLocaleTimeString()}`);
-    }
-
-    // Reset daily at midnight — pick new random hour for tomorrow
-    if (currentHour === 0 && now.getMinutes() === 0) {
-      scheduledHour = getRandomHour();
-      console.log(`[Chaos Window] Tomorrow's window: ${scheduledHour}:00 - ${scheduledHour + 2}:00`);
-    }
+  cron.schedule('0 0 * * *', async () => {
+    scheduledHour = getRandomHour();
+    await scheduleToday();
+    console.log(`[Chaos Window] Today's window: ${scheduledHour}:00 - ${scheduledHour + 2}:00`);
   });
 };
 
 export const getChaosWindowStatus = async () => {
-  const isActive = await isChaosWindowActive();
-  return {
-    isActive,
-    scheduledHour,
-    scheduledEnd: scheduledHour + 2,
-  };
+  const status = await readChaosStatus();
+  return { ...status, scheduledHour, scheduledEnd: scheduledHour + 2 };
 };

@@ -45,8 +45,7 @@ export default function DashboardPage() {
       ]);
       setConnections(connRes.data);
       setChaosStatus(chaosRes.data);
-    } catch (err) {
-      console.error('Failed to load dashboard data', err);
+    } catch {
       setError('Failed to load dashboard data. Please try again.');
     } finally {
       setIsLoading(false);

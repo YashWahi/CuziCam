@@ -12,6 +12,8 @@ import styles from '../signin/page.module.css';
 export default function SignUpPage() {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
+  const [gender, setGender] = useState<'male' | 'female'>('male');
+  const [college, setCollege] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [error, setError] = useState('');
@@ -22,8 +24,8 @@ export default function SignUpPage() {
     e.preventDefault();
     setError('');
 
-    if (!email.endsWith('.edu') && !email.includes('ac.in')) {
-      setError('Please use a valid college (.edu) email.');
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setError('Please use a valid email address.');
       return;
     }
 
@@ -35,12 +37,10 @@ export default function SignUpPage() {
     setLoading(true);
 
     try {
-      const response: any = await authApi.register({ name, email, password });
-      // response.data is { message, userId } based on backend controller
-      router.push(`/verify-email?userId=${response.userId}&email=${encodeURIComponent(email)}`);
+      const response: any = await authApi.register({ name, email, password, gender, college });
+      router.push(`/auth/verify?userId=${response.userId}&email=${encodeURIComponent(email)}`);
     } catch (err: any) {
-      console.error('Signup error:', err);
-      setError(err.response?.data?.error || 'Registration failed. Please try again.');
+      setError(err.data?.error || err.message || 'Registration failed. Please try again.');
     } finally {
       setLoading(false);
     }
@@ -121,14 +121,35 @@ export default function SignUpPage() {
             <Input
               label="College Email"
               type="email"
-              placeholder="you@college.edu"
+              placeholder="you@example.com"
               value={email}
               onChange={(e) => setEmail(e.target.value)}
               fullWidth
               required
             />
+            <Input
+              label="College"
+              type="text"
+              placeholder="Your college"
+              value={college}
+              onChange={(e) => setCollege(e.target.value)}
+              fullWidth
+              required
+            />
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem', marginBottom: '1rem' }}>
+              {(['male', 'female'] as const).map((option) => (
+                <Button
+                  key={option}
+                  type="button"
+                  variant={gender === option ? 'primary' : 'secondary'}
+                  onClick={() => setGender(option)}
+                >
+                  {option === 'male' ? 'Male' : 'Female'}
+                </Button>
+              ))}
+            </div>
             <p className={styles.helperText} style={{ marginTop: '-0.75rem', marginBottom: '1rem', fontSize: '0.75rem', color: 'var(--text-muted)' }}>
-              Must be .edu or college domain
+              Any valid email works.
             </p>
 
             <Input
