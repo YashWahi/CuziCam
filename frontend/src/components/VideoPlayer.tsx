@@ -8,10 +8,9 @@ interface VideoPlayerProps {
   isLocal?: boolean;
   muted?: boolean;
   username?: string;
-  isRevealed?: boolean;
 }
 
-export default function VideoPlayer({ stream, isLocal = false, muted = false, username = 'Anonymous', isRevealed = false }: VideoPlayerProps) {
+export default function VideoPlayer({ stream, isLocal = false, muted = false, username = 'Anonymous' }: VideoPlayerProps) {
   const videoRef = useRef<HTMLVideoElement>(null);
 
   useEffect(() => {
@@ -28,7 +27,7 @@ export default function VideoPlayer({ stream, isLocal = false, muted = false, us
           autoPlay
           playsInline
           muted={muted}
-          className={`video-element ${isLocal ? 'mirrored' : ''} ${!isRevealed && !isLocal ? 'blurred' : ''}`}
+          className={`video-element ${isLocal ? 'mirrored' : ''}`}
         />
       ) : (
         <div className="video-placeholder">
@@ -39,7 +38,7 @@ export default function VideoPlayer({ stream, isLocal = false, muted = false, us
       
       <div className="video-overlay glass">
         <span className="username">
-          {isRevealed ? username : (isLocal ? 'You' : 'Anonymous Student')}
+          {isLocal ? 'You' : 'Anonymous Student'}
         </span>
       </div>
     </div>

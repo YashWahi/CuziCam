@@ -48,7 +48,7 @@ export default function ChatSessionPage() {
   const [status, setStatus] = useState<string>('Initializing...');
   const [localStream, setLocalStream] = useState<MediaStream | null>(null);
   const [remoteStream, setRemoteStream] = useState<MediaStream | null>(null);
-  const [isRevealed, setIsRevealed] = useState(false);
+
   const [vibeData, setVibeData] = useState<{ icebreaker: string, sharedInterests: string[] } | null>(null);
   const [messages, setMessages] = useState<{text: string, isSelf: boolean, id: number}[]>([]);
   const [chatInput, setChatInput] = useState('');
@@ -90,7 +90,7 @@ export default function ChatSessionPage() {
     try {
       setIsMediaErrorModalOpen(false);
       const stream = await navigator.mediaDevices.getUserMedia({
-        video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
+        video: { width: { ideal: 1280 }, height: { ideal: 720 }, frameRate: { ideal: 30 }, facingMode: 'user' },
         audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
       });
       setLocalStream(stream);
@@ -162,6 +162,15 @@ export default function ChatSessionPage() {
       const answer = await pc.createAnswer();
       await pc.setLocalDescription(answer);
       socket.emit('webrtc:answer', { answer });
+
+      // Apply bitrate hint on answerer side as well
+      const videoSender = pc.getSenders().find(s => s.track?.kind === 'video');
+      if (videoSender) {
+        const params = videoSender.getParameters();
+        if (!params.encodings) params.encodings = [{}];
+        params.encodings[0].maxBitrate = 2500000; // 2.5 Mbps
+        await videoSender.setParameters(params);
+      }
     });
 
     socket.on('webrtc:answer', async (data) => {
@@ -220,6 +229,15 @@ export default function ChatSessionPage() {
         const offer = await pc.createOffer();
         await pc.setLocalDescription(offer);
         socket.emit('webrtc:offer', { offer });
+
+        // Apply bitrate hint after local description is set
+        const videoSender = pc.getSenders().find(s => s.track?.kind === 'video');
+        if (videoSender) {
+          const params = videoSender.getParameters();
+          if (!params.encodings) params.encodings = [{}];
+          params.encodings[0].maxBitrate = 2500000; // 2.5 Mbps
+          await videoSender.setParameters(params);
+        }
       };
       createOffer();
     }
@@ -326,7 +344,6 @@ export default function ChatSessionPage() {
         <div className={styles.remoteVideoContainer}>
           <VideoPlayer 
             stream={remoteStream} 
-            isRevealed={isRevealed} 
             username={partnerName}
           />
         </div>
@@ -335,7 +352,6 @@ export default function ChatSessionPage() {
           <VideoPlayer 
             stream={localStream} 
             isLocal 
-            isRevealed 
             username={user?.name || 'You'}
           />
         </div>
@@ -350,11 +366,7 @@ export default function ChatSessionPage() {
           <Button variant="ghost" onClick={toggleVideo}>
             {videoEnabled ? 'Stop Video' : 'Start Video'}
           </Button>
-          {!isRevealed && status === 'Connected' && (
-            <Button variant="ghost" onClick={() => setIsRevealed(true)}>
-              🎭 REVEAL
-            </Button>
-          )}
+
           <Button variant="primary" onClick={handleStar} disabled={status !== 'Connected' || isStarred}>
             {isStarred ? '⭐ STARRED' : '⭐ STAR'}
           </Button>
